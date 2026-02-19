@@ -1,0 +1,68 @@
+from django.db import models
+from django.conf import settings
+from django.core.validators import RegexValidator
+
+class Store(models.Model):
+    
+    # Subdomain validator
+    subdomain_validator = RegexValidator(
+        regex=r'^[a-z0-9-]+$',
+        message='Subdomain can only contain lowercase letters, numbers, and hyphens'
+    )
+    
+    name = models.CharField(
+        max_length=100,
+        help_text='Store display name (e.g., "Nike Official Store")'
+    )
+    
+    subdomain = models.SlugField(
+        max_length=50,
+        unique=True,
+        validators=[subdomain_validator],
+        help_text='Unique subdomain (e.g., "nike" for nike.myplatform.com)'
+    )
+    
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='owned_stores',
+        help_text='User who created/owns this store'
+    )
+    
+    # Store Settings
+    description = models.TextField(blank=True)
+    logo = models.ImageField(upload_to='store_logos/', blank=True, null=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Inactive stores are inaccessible to customers'
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        default='USD',
+        choices=[
+            ('USD', 'US Dollar'),
+            ('EUR', 'Euro'),
+            ('GBP', 'British Pound'),
+            ('INR', 'Indian Rupee'),
+        ]
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Store'
+        verbose_name_plural = 'Stores'
+        indexes = [
+            models.Index(fields=['subdomain']),  
+            models.Index(fields=['is_active', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} ({self.subdomain})"
+    
+    def get_full_domain(self):
+        """Returns full domain: subdomain.myplatform.com"""
+        return f"{self.subdomain}.myplatform.com"
