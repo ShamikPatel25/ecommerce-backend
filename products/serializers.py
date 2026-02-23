@@ -130,20 +130,14 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.variants.count()
         return 0
 
-
-# class ProductCreateSerializer(serializers.ModelSerializer):
-#     """Simplified Product Creation"""
-    
-#     class Meta:
-#         model = Product
-#         fields = ['name', 'sku', 'product_type', 'price', 'compare_at_price', 'stock', 'category', 'is_active', 'is_featured']
 class ProductCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'name', 'sku', 'product_type', 'price', 'compare_at_price',
+            'id','name', 'sku', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'is_active', 'is_featured'
         ]
+        read_only_fields = ['id']  
     
     def validate_sku(self, value):
         """Ensure SKU is unique"""
@@ -158,14 +152,31 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Price must be a positive number.')
         return value
 
+class CombinationSerializer(serializers.Serializer):
+    """A single attribute-value combination with optional per-variant price and stock."""
+    attribute_values = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text='List of AttributeValue IDs for this variant'
+    )
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2,
+        required=False, allow_null=True,
+        help_text='Override price for this variant (optional)'
+    )
+    stock = serializers.IntegerField(
+        default=0, required=False,
+        help_text='Stock quantity for this variant'
+    )
+
+
 class GenerateCatalogRequestSerializer(serializers.Serializer):
     """
     Request to Generate Catalog Variants
-    
+
     single_catalog_mode:
     - true: Generate ONE variant (radio button selection)
     - false: Generate ALL combinations (checkbox selection)
-    
+
     selected_combinations: Array of selected attribute value combinations
     """
     single_catalog_mode = serializers.BooleanField(
@@ -173,19 +184,12 @@ class GenerateCatalogRequestSerializer(serializers.Serializer):
         help_text='True = Single variant (radio), False = Multiple variants (checkbox)'
     )
     selected_combinations = serializers.ListField(
-        child=serializers.DictField(),
+        child=CombinationSerializer(),
         help_text='Array of selected attribute value combinations'
     )
-    
+
     def validate_selected_combinations(self, value):
         """Validate combinations format"""
         if not value:
             raise serializers.ValidationError('At least one combination is required')
-        
-        for combo in value:
-            if not isinstance(combo, dict):
-                raise serializers.ValidationError('Each combination must be a dictionary')
-            if 'attribute_values' not in combo:
-                raise serializers.ValidationError('Each combination must have attribute_values')
-        
         return value

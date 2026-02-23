@@ -202,6 +202,20 @@ class AttributeViewSet(viewsets.ModelViewSet):
                 {'error': 'Value not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+    # @action(detail=False, methods=['get'], url_path='category/(?P<category_id>[^/.]+)')
+    # def by_category(self, request, category_id=None):
+    #     """
+    #     Get attributes by category
+        
+    #     GET /api/attributes/category/{category_id}/
+    #     """
+    #     attributes = self.get_queryset().filter(category_id=category_id)
+    #     serializer = self.get_serializer(attributes, many=True)
+        
+    #     return Response({
+    #         'count': attributes.count(),
+    #         'attributes': serializer.data
+    #     })
     
     @extend_schema(
         summary="Get attributes by category",

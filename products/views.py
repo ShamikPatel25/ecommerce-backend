@@ -261,17 +261,23 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Generate variants
         try:
             with transaction.atomic():
-                # Clear existing variants
-                product.variants.all().delete()
-                
                 created_variants = []
-                
+                skipped_variants = []
+
                 for combo in selected_combinations:
-                    variant = self._create_variant(product, combo['attribute_values'])
-                    created_variants.append(variant)
-                
+                    variant, created = self._create_variant(
+                        product,
+                        combo['attribute_values'],
+                        price=combo.get('price'),
+                        stock=combo.get('stock', 0),
+                    )
+                    if created:
+                        created_variants.append(variant)
+                    else:
+                        skipped_variants.append(variant)
+
                 return Response({
-                    'message': f'Generated {len(created_variants)} variant(s)',
+                    'message': f'Generated {len(created_variants)} new variant(s), skipped {len(skipped_variants)} duplicate(s)',
                     'mode': 'Single Catalog' if single_catalog_mode else 'Multiple Catalogs',
                     'variants': ProductVariantSerializer(created_variants, many=True).data
                 }, status=status.HTTP_201_CREATED)
@@ -281,7 +287,48 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
-    
+
+    @extend_schema(summary="Update a single catalog variant")
+    @action(detail=True, methods=['patch'], url_path='variants/(?P<variant_id>[^/.]+)')
+    def update_variant(self, request, pk=None, variant_id=None):
+        """
+        Update stock and/or price of a single variant.
+        PATCH /api/products/{id}/variants/{variant_id}/
+        Body: { "stock": 10, "price": 999.00 }
+        """
+        product = self.get_object()
+        try:
+            variant = product.variants.get(id=variant_id)
+        except ProductVariant.DoesNotExist:
+            return Response({'error': 'Variant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        stock = request.data.get('stock')
+        price = request.data.get('price')
+
+        if stock is not None:
+            variant.stock = int(stock)
+        if price is not None:
+            variant.price = price if price != '' else None
+        variant.save()
+
+        return Response(ProductVariantSerializer(variant).data)
+
+    @extend_schema(summary="Delete a single catalog variant")
+    @action(detail=True, methods=['delete'], url_path='variants/(?P<variant_id>[^/.]+)/delete')
+    def delete_variant(self, request, pk=None, variant_id=None):
+        """
+        Delete a single variant.
+        DELETE /api/products/{id}/variants/{variant_id}/delete/
+        """
+        product = self.get_object()
+        try:
+            variant = product.variants.get(id=variant_id)
+        except ProductVariant.DoesNotExist:
+            return Response({'error': 'Variant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        variant.delete()
+        return Response({'message': 'Variant deleted'}, status=status.HTTP_204_NO_CONTENT)
+
     def _generate_all_combinations(self, product):
         """Auto-generate all possible combinations from selected attributes"""
         selected_attrs = product.selected_attributes.all()
@@ -304,36 +351,42 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         return formatted_combinations
     
-    def _create_variant(self, product, attribute_value_ids):
-        """Create a single variant with given attribute values"""
+    def _create_variant(self, product, attribute_value_ids, price=None, stock=0):
+        """Create a single variant. Returns (variant, created) — skips if duplicate SKU exists."""
         # Validate attribute values
         attr_values = AttributeValue.objects.filter(id__in=attribute_value_ids)
-        
+
         if attr_values.count() != len(attribute_value_ids):
             raise ValueError('Some attribute values not found')
-        
-        # Generate SKU
+
+        # Generate deterministic SKU from product SKU + attribute values
         sku_parts = [product.sku]
         for av in attr_values:
             sku_parts.append(av.value.replace(' ', '-'))
         variant_sku = '-'.join(sku_parts)
-        
-        # Create variant
+
+        # Skip if this exact variant already exists
+        existing = ProductVariant.objects.filter(product=product, sku=variant_sku).first()
+        if existing:
+            return existing, False  # (variant, created=False)
+
+        # Create the new variant
         variant = ProductVariant.objects.create(
             product=product,
             sku=variant_sku,
-            stock=0,  # Owner will set stock later
+            price=price if price is not None else None,  # None = use product base price
+            stock=int(stock) if stock else 0,
             is_active=True
         )
-        
+
         # Link attribute values to variant
         for av in attr_values:
             VariantAttributeValue.objects.create(
                 variant=variant,
                 attribute_value=av
             )
-        
-        return variant
+
+        return variant, True  # (variant, created=True)
     
     @extend_schema(
         summary="Get available attributes for catalog",
