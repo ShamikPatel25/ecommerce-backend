@@ -1,0 +1,67 @@
+from rest_framework import serializers
+from .models import Order, OrderItem
+from products.models import Product, ProductVariant
+from products.serializers import ProductVariantSerializer
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_name  = serializers.CharField(source='product.name', read_only=True)
+    product_sku   = serializers.CharField(source='product.sku', read_only=True)
+    variant_attrs = serializers.CharField(
+        source='variant.attribute_values_display', read_only=True
+    )
+    subtotal      = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model  = OrderItem
+        fields = [
+            'id', 'product', 'product_name', 'product_sku',
+            'variant', 'variant_attrs',
+            'quantity', 'unit_price', 'subtotal',
+        ]
+        read_only_fields = ['id']
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items         = OrderItemSerializer(many=True, read_only=True)
+    items_count   = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model  = Order
+        fields = [
+            'id', 'customer_name', 'customer_email', 'customer_phone',
+            'status', 'status_display', 'total_amount', 'notes',
+            'items', 'items_count', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
+
+    def get_items_count(self, obj):
+        return obj.items.count()
+
+
+class OrderItemCreateSerializer(serializers.Serializer):
+    product  = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    variant  = serializers.PrimaryKeyRelatedField(
+        queryset=ProductVariant.objects.all(), required=False, allow_null=True
+    )
+    quantity   = serializers.IntegerField(min_value=1, default=1)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class OrderCreateSerializer(serializers.Serializer):
+    customer_name  = serializers.CharField(max_length=255)
+    customer_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    customer_phone = serializers.CharField(max_length=30, required=False, allow_blank=True, allow_null=True)
+    notes          = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    items          = OrderItemCreateSerializer(many=True)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError('Order must have at least one item.')
+        return value
+
+
+class OrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Order.STATUS_CHOICES)
+    notes  = serializers.CharField(required=False, allow_blank=True, allow_null=True)
