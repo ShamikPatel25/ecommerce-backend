@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from .models import Attribute, AttributeValue
-from products.models import Category
 
 class AttributeValueSerializer(serializers.ModelSerializer):
     """

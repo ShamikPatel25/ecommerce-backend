@@ -3,7 +3,6 @@ from .models import (
     Category, Product, ProductMedia, 
     ProductAttribute, ProductVariant, VariantAttributeValue
 )
-from attributes.models import Attribute, AttributeValue
 
 class CategoryTreeSerializer(serializers.ModelSerializer):
     """
@@ -14,7 +13,7 @@ class CategoryTreeSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'children', 'created_at']
+        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'is_active', 'children', 'created_at']
         read_only_fields = ['id', 'level', 'created_at']
     
     def get_children(self, obj):
@@ -32,7 +31,7 @@ class CategorySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'product_count', 'created_at']
+        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'is_active', 'product_count', 'created_at']
         read_only_fields = ['id', 'level', 'created_at']
     
     def get_product_count(self, obj):
@@ -118,7 +117,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'sku', 'product_type', 'price', 'compare_at_price',
+            'id', 'name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'category_name', 'is_active', 'is_featured',
             'media', 'selected_attributes', 'variants', 'variants_count',
             'created_at', 'updated_at'
@@ -134,7 +133,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id','name', 'sku', 'product_type', 'price', 'compare_at_price',
+            'id','name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'is_active', 'is_featured'
         ]
         read_only_fields = ['id']  
@@ -151,6 +150,17 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError('Price must be a positive number.')
         return value
+
+    def validate(self, data):
+        """Prevent activating a product if its category is inactive"""
+        is_active = data.get('is_active')
+        category = data.get('category', getattr(self.instance, 'category', None))
+        # When activating, check if category is active
+        if is_active and category and not category.is_active:
+            raise serializers.ValidationError({
+                'is_active': f'Cannot activate product. Category "{category.name}" is inactive. Please activate the category first.'
+            })
+        return data
 
 class CombinationSerializer(serializers.Serializer):
     """A single attribute-value combination with optional per-variant price and stock."""
@@ -185,11 +195,7 @@ class GenerateCatalogRequestSerializer(serializers.Serializer):
     )
     selected_combinations = serializers.ListField(
         child=CombinationSerializer(),
-        help_text='Array of selected attribute value combinations'
+        required=False,
+        default=[],
+        help_text='Array of selected attribute value combinations. Empty = auto-generate all.'
     )
-
-    def validate_selected_combinations(self, value):
-        """Validate combinations format"""
-        if not value:
-            raise serializers.ValidationError('At least one combination is required')
-        return value

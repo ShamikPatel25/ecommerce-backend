@@ -29,7 +29,10 @@ class Category(models.Model):
     
     # Level tracking (auto-calculated)
     level = models.PositiveIntegerField(default=0, editable=False)
-    
+
+    # Status
+    is_active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -79,7 +82,7 @@ class Product(models.Model):
     )
     category = models.ForeignKey(
         Category,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name='products'
@@ -87,7 +90,9 @@ class Product(models.Model):
     
     # Basic Info
     name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, blank=True)
     sku = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, default='')
     
     # Product Type
     product_type = models.CharField(

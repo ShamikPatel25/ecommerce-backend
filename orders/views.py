@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Count, Sum, Max
+from django.db.models import Count, Sum, Max, F
 
 from .models import Order, OrderItem
 from .serializers import (
@@ -42,6 +42,54 @@ class OrderViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=status_filter)
         return qs
 
+    # ── Stock helpers ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _decrement_stock(item_data):
+        """Decrement product/variant stock. Raises ValueError on insufficient stock."""
+        product = item_data['product']
+        variant = item_data.get('variant')
+        qty = item_data['quantity']
+
+        if variant:
+            # Use select_for_update to prevent race conditions
+            from products.models import ProductVariant
+            v = ProductVariant.objects.select_for_update().get(pk=variant.pk)
+            if v.stock < qty:
+                raise ValueError(
+                    f'Insufficient stock for variant "{v.sku}": '
+                    f'requested {qty}, available {v.stock}'
+                )
+            v.stock = F('stock') - qty
+            v.save(update_fields=['stock'])
+        else:
+            from products.models import Product
+            p = Product.objects.select_for_update().get(pk=product.pk)
+            if p.stock < qty:
+                raise ValueError(
+                    f'Insufficient stock for product "{p.name}": '
+                    f'requested {qty}, available {p.stock}'
+                )
+            p.stock = F('stock') - qty
+            p.save(update_fields=['stock'])
+
+    @staticmethod
+    def _restore_stock(order):
+        """Restore stock for all items in an order (used on cancellation)."""
+        for item in order.items.select_related('product', 'variant').all():
+            if item.variant:
+                from products.models import ProductVariant
+                ProductVariant.objects.filter(pk=item.variant_id).update(
+                    stock=F('stock') + item.quantity
+                )
+            elif item.product:
+                from products.models import Product
+                Product.objects.filter(pk=item.product_id).update(
+                    stock=F('stock') + item.quantity
+                )
+
+    # ── CRUD ──────────────────────────────────────────────────────────────
+
     @extend_schema(summary='Create a new order', request=OrderCreateSerializer)
     def create(self, request, *args, **kwargs):
         serializer = OrderCreateSerializer(data=request.data)
@@ -59,6 +107,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                     notes=data.get('notes'),
                 )
                 for item_data in data['items']:
+                    # Decrement stock before creating the item
+                    self._decrement_stock(item_data)
+
                     OrderItem.objects.create(
                         order=order,
                         product=item_data['product'],
@@ -72,6 +123,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OrderSerializer(order, context={'request': request}).data,
                 status=status.HTTP_201_CREATED,
             )
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -83,10 +136,18 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        order.status = serializer.validated_data['status']
-        if serializer.validated_data.get('notes') is not None:
-            order.notes = serializer.validated_data['notes']
-        order.save(update_fields=['status', 'notes', 'updated_at'])
+        new_status = serializer.validated_data['status']
+        old_status = order.status
+
+        with transaction.atomic():
+            # Restore stock when an order is cancelled (only if it wasn't already cancelled)
+            if new_status == 'cancelled' and old_status != 'cancelled':
+                self._restore_stock(order)
+
+            order.status = new_status
+            if serializer.validated_data.get('notes') is not None:
+                order.notes = serializer.validated_data['notes']
+            order.save(update_fields=['status', 'notes', 'updated_at'])
 
         return Response(OrderSerializer(order, context={'request': request}).data)
 

@@ -1,12 +1,21 @@
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, generics
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 
-from .serializers import UserRegistrationSerializer, UserSerializer
+from .serializers import (
+    UserRegistrationSerializer, UserSerializer, UserProfileUpdateSerializer,
+    ChangePasswordSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
+)
+
+User = get_user_model()
 
 @extend_schema(tags=['Authentication'])
 class RegisterView(generics.CreateAPIView):
@@ -132,3 +141,115 @@ def user_profile_view(request):
     """Get current user profile"""
     serializer = UserSerializer(request.user)
     return Response(serializer.data)
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary="Update user profile",
+    description="Update the authenticated user's profile (first_name, last_name, phone, username)",
+)
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_profile_view(request):
+    """Update current user profile"""
+    serializer = UserProfileUpdateSerializer(
+        request.user, data=request.data, partial=True, context={'request': request}
+    )
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(UserSerializer(request.user).data)
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary="Change password",
+    description="Change the authenticated user's password",
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    """Change current user password"""
+    serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+    serializer.is_valid(raise_exception=True)
+    request.user.set_password(serializer.validated_data['new_password'])
+    request.user.save()
+    return Response({'message': 'Password changed successfully'})
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary="Request password reset",
+    description="Send a password reset link to the user's email. Always returns success message for security.",
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password_view(request):
+    serializer = ForgotPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    email = serializer.validated_data['email'].lower()
+
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        # Security: don't reveal email doesn't exist — show fake "sent" message
+        return Response({'found': False, 'message': "We've sent a password reset link to the given email."})
+
+    # Email exists — generate token and return it directly
+    token = default_token_generator.make_token(user)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+    return Response({'found': True, 'uid': uid, 'token': token})
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary="Verify reset token",
+    description="Check if a password reset token is still valid.",
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_reset_token_view(request):
+    uid = request.data.get('uid')
+    token = request.data.get('token')
+
+    if not uid or not token:
+        return Response({'valid': False, 'error': 'Missing uid or token'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return Response({'valid': False, 'error': 'Invalid link'})
+
+    if default_token_generator.check_token(user, token):
+        return Response({'valid': True})
+    else:
+        return Response({'valid': False, 'error': 'Link has expired or is invalid'})
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary="Reset password",
+    description="Set a new password using the reset token.",
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_view(request):
+    serializer = ResetPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    uid = serializer.validated_data['uid']
+    token = serializer.validated_data['token']
+
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return Response({'error': 'Invalid reset link'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not default_token_generator.check_token(user, token):
+        return Response({'error': 'Reset link has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(serializer.validated_data['new_password'])
+    user.save()
+    return Response({'message': 'Password has been reset successfully. You can now sign in.'})

@@ -29,6 +29,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             'phone': {'required': False},
         }
     
+    def validate_email(self, value):
+        if ' ' in value:
+            raise serializers.ValidationError("Email must not contain spaces.")
+        return value
+
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({
@@ -56,9 +61,54 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
 
     full_name = serializers.CharField(source='get_full_name', read_only=True)
-    
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'first_name', 'last_name', 
+        fields = ['id', 'email', 'username', 'first_name', 'last_name',
                   'full_name', 'phone', 'is_store_owner', 'date_joined']
         read_only_fields = ['id', 'date_joined']
+
+
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'phone', 'username']
+
+    def validate_username(self, value):
+        user = self.context['request'].user
+        if User.objects.filter(username=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('This username is already taken.')
+        return value
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, style={'input_type': 'password'})
+    new_password = serializers.CharField(required=True, validators=[validate_password], style={'input_type': 'password'})
+    new_password2 = serializers.CharField(required=True, style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password2']:
+            raise serializers.ValidationError({'new_password': "New passwords don't match."})
+        return attrs
+
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Current password is incorrect.')
+        return value
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, validators=[validate_password], style={'input_type': 'password'})
+    new_password2 = serializers.CharField(required=True, style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password2']:
+            raise serializers.ValidationError({'new_password': "New passwords don't match."})
+        return attrs

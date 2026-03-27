@@ -44,8 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
-    'drf_spectacular', 
-    'django_extensions',
+    'drf_spectacular',
     
     # Local apps
     'accounts',
@@ -65,7 +64,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'tenants.middleware.TenantMiddleware',
-    'tenants.logging.TenantLoggingMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -181,6 +179,15 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:3000',
 ]
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'authorization',
+    'content-type',
+    'origin',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-store-id',
+]
 
 # Add logging configuration
 LOGGING = {
@@ -196,6 +203,22 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+
+# Email Configuration
+# Dev: prints to console (no Gmail needed). Prod: set EMAIL_BACKEND in .env
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER', default='noreply@ecommerce.com')
+
+# Frontend URL (for password reset links)
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
+
+# Password reset token valid for 1 hour
+PASSWORD_RESET_TIMEOUT = 3600
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Multi-Tenant E-commerce API',

@@ -1,10 +1,9 @@
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
-from django.db import transaction
+from django.db import transaction, models
 from itertools import product as itertools_product
 
 from .models import (
@@ -54,6 +53,17 @@ class CategoryViewSet(viewsets.ModelViewSet):
         serializer = CategoryTreeSerializer(root_categories, many=True)
         return Response(serializer.data)
 
+    @extend_schema(summary="Toggle category active status")
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Toggle is_active and cascade to all products in this category"""
+        category = self.get_object()
+        category.is_active = not category.is_active
+        category.save()
+        # Cascade: activate/deactivate all products in this category
+        category.products.update(is_active=category.is_active)
+        return Response(CategorySerializer(category).data)
+
 
 @extend_schema(tags=['Products'])
 @extend_schema_view(
@@ -75,7 +85,47 @@ class ProductViewSet(viewsets.ModelViewSet):
         return ProductSerializer
     
     def get_queryset(self):
-        return get_tenant_model(self.request, Product).prefetch_related('media', 'variants')
+        qs = get_tenant_model(self.request, Product).prefetch_related('media', 'variants')
+        params = self.request.query_params
+
+        # Search by name or SKU
+        search = params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                models.Q(name__icontains=search) | models.Q(sku__icontains=search)
+            )
+
+        # Filter by category
+        category = params.get('category')
+        if category:
+            qs = qs.filter(category_id=category)
+
+        # Filter by product type
+        product_type = params.get('product_type')
+        if product_type in ('single', 'catalog'):
+            qs = qs.filter(product_type=product_type)
+
+        # Filter by price range
+        min_price = params.get('min_price')
+        if min_price:
+            qs = qs.filter(price__gte=min_price)
+        max_price = params.get('max_price')
+        if max_price:
+            qs = qs.filter(price__lte=max_price)
+
+        # Filter by stock status
+        stock_status = params.get('stock_status')
+        if stock_status == 'in_stock':
+            qs = qs.filter(stock__gt=0)
+        elif stock_status == 'out_of_stock':
+            qs = qs.filter(stock=0)
+
+        # Filter by active status
+        is_active = params.get('is_active')
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
+
+        return qs
     
     def perform_create(self, serializer):
         serializer.save(store=self.request.tenant)
