@@ -24,6 +24,7 @@ from tenants.utils import get_tenant_model
 class OrderViewSet(viewsets.ModelViewSet):
     """Order management — list, retrieve, create, update status, delete."""
     permission_classes = [IsAuthenticated]
+    pagination_class = None
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):

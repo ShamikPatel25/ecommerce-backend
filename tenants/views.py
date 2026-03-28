@@ -32,6 +32,7 @@ from .serializers import StoreSerializer, StoreCreateSerializer
 class StoreViewSet(viewsets.ModelViewSet):
     """Multi-tenant store management"""
     permission_classes = [IsAuthenticated]
+    pagination_class = None
     
     def get_queryset(self):
         """Return only stores owned by current user"""

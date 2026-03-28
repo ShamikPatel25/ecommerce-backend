@@ -33,6 +33,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -45,13 +46,14 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_spectacular',
-    
+    'channels',
     # Local apps
     'accounts',
     'tenants',
     'products',
     'attributes',
     'orders',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -84,7 +86,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
 
 
 # Database
@@ -219,6 +221,16 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 
 # Password reset token valid for 1 hour
 PASSWORD_RESET_TIMEOUT = 3600
+
+# Channels (WebSocket)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [config('REDIS_URL', default='redis://localhost:6379/0')],
+        },
+    },
+}
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Multi-Tenant E-commerce API',

@@ -39,18 +39,19 @@ from tenants.utils import get_tenant_model
 class AttributeViewSet(viewsets.ModelViewSet):
     """
     Attribute Management API
-    
+
     Workflow:
     1. Create Attribute: POST /api/attributes/
        { "category": 1, "name": "Size" }
-    
+
     2. Add Values: POST /api/attributes/{id}/add_value/
        { "value": "30" }
-    
+
     3. Or Bulk Add: POST /api/attributes/{id}/add_bulk_values/
        { "values": ["30", "40", "42", "46"] }
     """
     permission_classes = [IsAuthenticated]
+    pagination_class = None
     
     def get_queryset(self):
         """Return only attributes for current tenant"""

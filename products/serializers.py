@@ -38,12 +38,31 @@ class CategorySerializer(serializers.ModelSerializer):
         return obj.products.filter(is_active=True).count()
     
     def validate(self, data):
-        """Validate category level doesn't exceed 3"""
+        """Validate category level and uniqueness"""
         parent = data.get('parent')
         if parent and parent.level >= 2:
             raise serializers.ValidationError({
                 'parent': 'Maximum 3 levels of categories allowed'
             })
+
+        # Check duplicate name/slug within same store
+        request = self.context.get('request')
+        if request and hasattr(request, 'tenant'):
+            name = data.get('name', '')
+            slug = data.get('slug', '')
+            store = request.tenant
+            qs = Category.objects.filter(store=store)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if name and qs.filter(name__iexact=name).exists():
+                raise serializers.ValidationError({
+                    'name': 'A category with this name already exists.'
+                })
+            if slug and qs.filter(slug=slug).exists():
+                raise serializers.ValidationError({
+                    'slug': 'A category with this slug already exists.'
+                })
+
         return data
 
 

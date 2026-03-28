@@ -30,6 +30,7 @@ from tenants.utils import get_tenant_model
 class CategoryViewSet(viewsets.ModelViewSet):
     """Category Management with Nested Support"""
     permission_classes = [IsAuthenticated]
+    pagination_class = None
     
     def get_serializer_class(self):
         if self.action == 'tree':
@@ -75,6 +76,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 )
 class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    pagination_class = None
 
     """
     Complete Product Management with Catalog Generation
@@ -129,7 +131,19 @@ class ProductViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(store=self.request.tenant)
-    
+
+    @extend_schema(
+        summary="Check if SKU already exists",
+        description="Returns whether a SKU is already taken"
+    )
+    @action(detail=False, methods=['post'])
+    def check_sku(self, request):
+        sku = request.data.get('sku', '').strip().upper()
+        if not sku:
+            return Response({'exists': False})
+        exists = Product.objects.filter(sku=sku).exists()
+        return Response({'exists': exists})
+
     @extend_schema(
         summary="Upload product media",
         description="Upload images or videos for product"
