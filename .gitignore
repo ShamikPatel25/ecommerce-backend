@@ -15,5 +15,10 @@ db.sqlite3
 # Static files
 staticfiles/
 media/
+mediafiles/
 
 docker-compose.yml
+
+# Logs
+*.log
+*_log.txt

@@ -8,8 +8,9 @@ from .models import (
 class ProductMediaInline(admin.TabularInline):
     model = ProductMedia
     extra = 0
-    fields = ('media_type', 'file', 'alt_text', 'order')
+    fields = ('media_type', 'file', 'attribute_value', 'alt_text', 'order')
     readonly_fields = ('created_at',)
+    autocomplete_fields = ('attribute_value',)
 
 
 class ProductAttributeInline(admin.TabularInline):

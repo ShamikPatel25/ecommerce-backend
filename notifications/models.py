@@ -7,7 +7,6 @@ class Notification(models.Model):
         ORDER_CREATED = 'order_created', 'Order Created'
         ORDER_STATUS_CHANGED = 'order_status_changed', 'Order Status Changed'
         PRODUCT_CREATED = 'product_created', 'Product Created'
-        PRODUCT_UPDATED = 'product_updated', 'Product Updated'
         PRODUCT_DELETED = 'product_deleted', 'Product Deleted'
         PRODUCT_LOW_STOCK = 'product_low_stock', 'Product Low Stock'
         CATEGORY_CREATED = 'category_created', 'Category Created'
@@ -15,7 +14,6 @@ class Notification(models.Model):
         ATTRIBUTE_CREATED = 'attribute_created', 'Attribute Created'
         ATTRIBUTE_DELETED = 'attribute_deleted', 'Attribute Deleted'
         STORE_CREATED = 'store_created', 'Store Created'
-        STORE_UPDATED = 'store_updated', 'Store Updated'
 
     store = models.ForeignKey(
         Store, on_delete=models.CASCADE, related_name='notifications'

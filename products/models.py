@@ -144,12 +144,16 @@ class Product(models.Model):
 class ProductMedia(models.Model):
     """
     Product Photos and Videos
+
+    Images can be linked to a specific attribute value (e.g., Color: Red)
+    so that variant-specific images display when that color is selected.
+    When attribute_value is null, the image is a general product image.
     """
     MEDIA_TYPE_CHOICES = [
         ('image', 'Image'),
         ('video', 'Video'),
     ]
-    
+
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -161,6 +165,14 @@ class ProductMedia(models.Model):
         help_text='Upload image or video'
     )
     alt_text = models.CharField(max_length=200, blank=True)
+    attribute_value = models.ForeignKey(
+        'attributes.AttributeValue',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='media',
+        help_text='Link image to a specific attribute value (e.g., Color: Red). Leave empty for general product images.'
+    )
     order = models.PositiveIntegerField(default=0)
     
     created_at = models.DateTimeField(auto_now_add=True)

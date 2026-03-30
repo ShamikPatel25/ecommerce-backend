@@ -59,13 +59,38 @@ class AttributeViewSet(viewsets.ModelViewSet):
     
     def get_serializer_class(self):
         """Use different serializer for creation"""
-        if self.action == 'create':
+        if self.action in ['create', 'update', 'partial_update']:
             return AttributeCreateSerializer
         return AttributeSerializer
-    
+
+    def create(self, request, *args, **kwargs):
+        """Override create to return full attribute data (with values) after creation."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        # Return the full representation with values
+        attribute = Attribute.objects.prefetch_related('values').get(pk=serializer.instance.pk)
+        return Response(
+            AttributeSerializer(attribute).data,
+            status=status.HTTP_201_CREATED
+        )
+
     def perform_create(self, serializer):
-        """Automatically set store to current tenant"""
-        serializer.save(store=self.request.tenant)
+        """Create attribute and its initial values in one go."""
+        attribute = serializer.save(store=self.request.tenant)
+
+        # Handle values passed alongside the create request
+        raw_values = self.request.data.get('values', [])
+        if isinstance(raw_values, list) and raw_values:
+            seen = set()
+            to_create = []
+            for v in raw_values:
+                v = str(v).strip()
+                if v and v not in seen:
+                    seen.add(v)
+                    to_create.append(AttributeValue(attribute=attribute, value=v))
+            if to_create:
+                AttributeValue.objects.bulk_create(to_create)
 
     def perform_destroy(self, instance):
         """Delete attribute and all its values"""

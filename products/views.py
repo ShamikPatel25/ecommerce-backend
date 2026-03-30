@@ -13,7 +13,8 @@ from .models import (
 from .serializers import (
     CategorySerializer, CategoryTreeSerializer,
     ProductSerializer, ProductCreateSerializer, ProductMediaSerializer,
-    GenerateCatalogRequestSerializer, ProductVariantSerializer
+    GenerateCatalogRequestSerializer, ProductVariantSerializer,
+    StorefrontProductSerializer
 )
 from attributes.models import Attribute, AttributeValue
 from tenants.utils import get_tenant_model
@@ -152,35 +153,124 @@ class ProductViewSet(viewsets.ModelViewSet):
     def upload_media(self, request, pk=None):
         """
         Upload product media
-        
+
         POST /api/products/{id}/upload_media/
         Form-data:
         - media_type: image or video
         - file: uploaded file
         - alt_text: (optional)
         - order: (optional)
+        - attribute_value_id: (optional) link image to a specific attribute value (e.g., Color: Red)
+
+        Auto-detection:
+        If no attribute_value_id is provided, the system tries to match the
+        filename against existing attribute values for the product.
+        E.g., uploading "polo_tshirt_red.webp" for a product with color attribute
+        will auto-link to the "Red" value.
         """
         product = self.get_object()
-        
+
         media_type = request.data.get('media_type')
         file = request.FILES.get('file')
-        
+
         if not media_type or not file:
             return Response(
                 {'error': 'media_type and file are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+        # Optional: link to an attribute value
+        attribute_value_id = request.data.get('attribute_value_id')
+        attribute_value_obj = None
+        if attribute_value_id:
+            try:
+                attribute_value_obj = AttributeValue.objects.get(id=attribute_value_id)
+            except AttributeValue.DoesNotExist:
+                return Response(
+                    {'error': 'Attribute value not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Auto-detect attribute value from filename if not explicitly provided
+        auto_detected = False
+        if not attribute_value_obj and product.product_type == 'catalog':
+            import os
+            filename_raw = os.path.splitext(file.name)[0]  # e.g. "polo_tshirt_red"
+            filename_lower = filename_raw.lower().replace('-', '_').replace(' ', '_')
+
+            # Get all attribute values for this product's selected attributes
+            selected_attr_ids = product.selected_attributes.values_list('attribute_id', flat=True)
+            candidate_values = AttributeValue.objects.filter(
+                attribute_id__in=selected_attr_ids
+            ).select_related('attribute')
+
+            # Try to match: check if any attribute value name appears in the filename
+            # Prefer longest match first to avoid "black" matching before "blackberry"
+            best_match = None
+            best_len = 0
+            for av in candidate_values:
+                val_lower = av.value.lower().replace('-', '_').replace(' ', '_')
+                if val_lower in filename_lower and len(val_lower) > best_len:
+                    best_match = av
+                    best_len = len(val_lower)
+
+            if best_match:
+                attribute_value_obj = best_match
+                auto_detected = True
+
+        # Auto-generate alt_text based on product name + attribute value
+        alt_text = request.data.get('alt_text', '')
+        if not alt_text:
+            slug = product.name.lower().replace(' ', '_')
+            if attribute_value_obj:
+                val_slug = attribute_value_obj.value.lower().replace(' ', '_')
+                existing_count = product.media.filter(attribute_value=attribute_value_obj).count()
+                alt_text = f"{slug}_{val_slug}_{existing_count + 1}"
+            else:
+                existing_count = product.media.filter(attribute_value__isnull=True).count()
+                alt_text = f"{slug}_{existing_count + 1}" if existing_count > 0 else slug
+
         media = ProductMedia.objects.create(
             product=product,
             media_type=media_type,
             file=file,
-            alt_text=request.data.get('alt_text', ''),
+            alt_text=alt_text,
+            attribute_value=attribute_value_obj,
             order=request.data.get('order', 0)
         )
-        
+
         serializer = ProductMediaSerializer(media, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        response_data = serializer.data
+        if auto_detected:
+            response_data['auto_detected'] = True
+            response_data['auto_detected_label'] = f"{attribute_value_obj.attribute.name}: {attribute_value_obj.value}"
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary="Delete product media",
+        description="Permanently delete a media file from a product"
+    )
+    @action(detail=True, methods=['delete'], url_path='media/(?P<media_id>[^/.]+)/delete')
+    def delete_media(self, request, pk=None, media_id=None):
+        """
+        Delete a specific media item from a product.
+
+        DELETE /api/products/{id}/media/{media_id}/delete/
+        """
+        product = self.get_object()
+        try:
+            media = product.media.get(id=media_id)
+        except ProductMedia.DoesNotExist:
+            return Response({'error': 'Media not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Delete the actual file from disk
+        if media.file:
+            import os
+            if os.path.isfile(media.file.path):
+                os.remove(media.file.path)
+
+        media.delete()
+        return Response({'message': 'Media deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
     
     @extend_schema(
         summary="Select attributes for catalog",
@@ -480,8 +570,28 @@ class ProductViewSet(viewsets.ModelViewSet):
         ).prefetch_related('values')
         
         serializer = AttributeSerializer(attributes, many=True)
-        
+
         return Response({
             'category': product.category.full_path,
             'available_attributes': serializer.data
         })
+
+    @extend_schema(
+        summary="Get storefront product detail",
+        description="Returns product with images grouped by attribute value (color) and variants grouped for storefront display"
+    )
+    @action(detail=True, methods=['get'])
+    def storefront_detail(self, request, pk=None):
+        """
+        Storefront-friendly product detail.
+
+        GET /api/products/{id}/storefront_detail/
+
+        Returns product info with:
+        - general_images: images not linked to any attribute value
+        - attribute_groups: for each attribute (e.g. Color), each value with its images
+          and available variants from other attributes (e.g. sizes)
+        """
+        product = self.get_object()
+        serializer = StorefrontProductSerializer(product, context={'request': request})
+        return Response(serializer.data)

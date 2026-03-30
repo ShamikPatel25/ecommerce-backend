@@ -56,11 +56,13 @@ class AttributeSerializer(serializers.ModelSerializer):
 
 class AttributeCreateSerializer(serializers.ModelSerializer):
     """
-    Simplified serializer for creating attributes
+    Simplified serializer for creating attributes.
+    Values are handled by the view, not by this serializer.
     """
     class Meta:
         model = Attribute
-        fields = ['category', 'name']
+        fields = ['id', 'category', 'name']
+        read_only_fields = ['id']
 
 
 class AttributeValueCreateSerializer(serializers.ModelSerializer):

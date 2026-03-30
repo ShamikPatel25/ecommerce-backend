@@ -69,16 +69,25 @@ class CategorySerializer(serializers.ModelSerializer):
 class ProductMediaSerializer(serializers.ModelSerializer):
     """Product Media Serializer"""
     file_url = serializers.SerializerMethodField()
-    
+    attribute_value_id = serializers.IntegerField(source='attribute_value.id', read_only=True, default=None)
+    attribute_value_name = serializers.CharField(source='attribute_value.value', read_only=True, default=None)
+    attribute_name = serializers.CharField(source='attribute_value.attribute.name', read_only=True, default=None)
+
     class Meta:
         model = ProductMedia
-        fields = ['id', 'media_type', 'file', 'file_url', 'alt_text', 'order', 'created_at']
+        fields = [
+            'id', 'media_type', 'file', 'file_url', 'alt_text', 'order',
+            'attribute_value_id', 'attribute_value_name', 'attribute_name',
+            'created_at'
+        ]
         read_only_fields = ['id', 'created_at']
-    
+
     def get_file_url(self, obj):
-        request = self.context.get('request')
+        # Return a relative path (e.g. /media/products/2026/03/image.jpg).
+        # The Next.js rewrite rule proxies /media/** → backend:8000/media/**,
+        # so this works correctly in both Docker and local development.
         if obj.file and hasattr(obj.file, 'url'):
-            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+            return obj.file.url
         return None
 
 
@@ -218,3 +227,138 @@ class GenerateCatalogRequestSerializer(serializers.Serializer):
         default=[],
         help_text='Array of selected attribute value combinations. Empty = auto-generate all.'
     )
+
+
+class StorefrontProductSerializer(serializers.ModelSerializer):
+    """
+    Storefront-friendly product serializer that groups variants by color
+    and returns per-color images + available sizes.
+
+    Response shape for catalog products:
+    {
+        ...product fields...,
+        "general_images": [...],       # images with no attribute_value
+        "attribute_groups": [          # one per visual attribute (e.g. Color)
+            {
+                "attribute_name": "Color",
+                "attribute_id": 5,
+                "values": [
+                    {
+                        "value_id": 10,
+                        "value": "Red",
+                        "images": [...],
+                        "available_sizes": [
+                            { "value_id": 20, "value": "36", "variant_id": 1, "stock": 5, "price": "29.99" },
+                            ...
+                        ]
+                    },
+                    ...
+                ]
+            }
+        ]
+    }
+    """
+    category_name = serializers.CharField(source='category.full_path', read_only=True)
+    general_images = serializers.SerializerMethodField()
+    attribute_groups = serializers.SerializerMethodField()
+    all_media = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Product
+        fields = [
+            'id', 'name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
+            'stock', 'category', 'category_name', 'is_active', 'is_featured',
+            'general_images', 'attribute_groups', 'all_media',
+            'created_at', 'updated_at'
+        ]
+
+    def get_all_media(self, obj):
+        return ProductMediaSerializer(
+            obj.media.select_related('attribute_value__attribute').all(),
+            many=True,
+            context=self.context
+        ).data
+
+    def get_general_images(self, obj):
+        """Images not linked to any attribute value — the main product images."""
+        general = obj.media.filter(attribute_value__isnull=True)
+        return ProductMediaSerializer(general, many=True, context=self.context).data
+
+    def get_attribute_groups(self, obj):
+        """
+        Build grouped data: for each selected attribute (e.g. Color),
+        list each value with its images and available other-dimension values (e.g. sizes).
+        """
+        if obj.product_type != 'catalog':
+            return []
+
+        selected_attrs = obj.selected_attributes.select_related('attribute').all()
+        if not selected_attrs:
+            return []
+
+        variants = obj.variants.filter(is_active=True, stock__gt=0).prefetch_related(
+            'attribute_values__attribute_value__attribute'
+        )
+
+        groups = []
+        for prod_attr in selected_attrs:
+            attr = prod_attr.attribute
+            attr_values = attr.values.all()
+
+            values_data = []
+            for av in attr_values:
+                # Find variants that have this attribute value
+                matching_variants = []
+                for variant in variants:
+                    vav_ids = [
+                        vav.attribute_value_id
+                        for vav in variant.attribute_values.all()
+                    ]
+                    if av.id in vav_ids:
+                        matching_variants.append(variant)
+
+                if not matching_variants:
+                    continue
+
+                # Images linked to this attribute value
+                images = obj.media.filter(attribute_value=av)
+                image_data = ProductMediaSerializer(images, many=True, context=self.context).data
+
+                # Collect available values from OTHER attributes for these variants
+                other_attrs_data = []
+                for other_prod_attr in selected_attrs:
+                    if other_prod_attr.attribute_id == attr.id:
+                        continue
+                    other_values = []
+                    for variant in matching_variants:
+                        for vav in variant.attribute_values.all():
+                            if vav.attribute_value.attribute_id == other_prod_attr.attribute_id:
+                                other_values.append({
+                                    'value_id': vav.attribute_value_id,
+                                    'value': vav.attribute_value.value,
+                                    'variant_id': variant.id,
+                                    'variant_sku': variant.sku,
+                                    'stock': variant.stock,
+                                    'price': str(variant.final_price),
+                                    'is_active': variant.is_active,
+                                })
+                    other_attrs_data.append({
+                        'attribute_name': other_prod_attr.attribute.name,
+                        'attribute_id': other_prod_attr.attribute_id,
+                        'available_values': other_values,
+                    })
+
+                values_data.append({
+                    'value_id': av.id,
+                    'value': av.value,
+                    'images': image_data,
+                    'available_variants': other_attrs_data,
+                })
+
+            groups.append({
+                'attribute_name': attr.name,
+                'attribute_id': attr.id,
+                'values': values_data,
+            })
+
+        return groups
