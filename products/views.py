@@ -5,10 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction, models
 from itertools import product as itertools_product
+import os
 
 from .models import (
-    Category, Product, ProductMedia, ProductAttribute, 
-    ProductVariant, VariantAttributeValue
+    Category, Product, ProductMedia, ProductAttribute,
+    ProductVariant, VariantAttributeValue, ProductType
 )
 from .serializers import (
     CategorySerializer, CategoryTreeSerializer,
@@ -76,12 +77,10 @@ class CategoryViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Delete product")
 )
 class ProductViewSet(viewsets.ModelViewSet):
+    """Complete Product Management with Catalog Generation"""
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
-    """
-    Complete Product Management with Catalog Generation
-    """    
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return ProductCreateSerializer
@@ -105,7 +104,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         # Filter by product type
         product_type = params.get('product_type')
-        if product_type in ('single', 'catalog'):
+        if product_type in (ProductType.SINGLE, ProductType.CATALOG):
             qs = qs.filter(product_type=product_type)
 
         # Filter by price range
@@ -193,8 +192,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         # Auto-detect attribute value from filename if not explicitly provided
         auto_detected = False
-        if not attribute_value_obj and product.product_type == 'catalog':
-            import os
+        if not attribute_value_obj and product.product_type == ProductType.CATALOG:
             filename_raw = os.path.splitext(file.name)[0]  # e.g. "polo_tshirt_red"
             filename_lower = filename_raw.lower().replace('-', '_').replace(' ', '_')
 
@@ -236,7 +234,8 @@ class ProductViewSet(viewsets.ModelViewSet):
             file=file,
             alt_text=alt_text,
             attribute_value=attribute_value_obj,
-            order=request.data.get('order', 0)
+            order=request.data.get('order', 0),
+            is_thumbnail=request.data.get('is_thumbnail', 'false').lower() in ('true', '1'),
         )
 
         serializer = ProductMediaSerializer(media, context={'request': request})
@@ -254,6 +253,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     def delete_media(self, request, pk=None, media_id=None):
         """
         Delete a specific media item from a product.
+        If the deleted item was the thumbnail, auto-promote the next image.
 
         DELETE /api/products/{id}/media/{media_id}/delete/
         """
@@ -263,15 +263,52 @@ class ProductViewSet(viewsets.ModelViewSet):
         except ProductMedia.DoesNotExist:
             return Response({'error': 'Media not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        was_thumbnail = media.is_thumbnail
+
         # Delete the actual file from disk
         if media.file:
-            import os
             if os.path.isfile(media.file.path):
                 os.remove(media.file.path)
 
         media.delete()
-        return Response({'message': 'Media deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-    
+
+        # Auto-promote next image as thumbnail
+        new_thumbnail = None
+        if was_thumbnail:
+            next_media = product.media.order_by('order', 'id').first()
+            if next_media:
+                next_media.is_thumbnail = True
+                next_media.save(update_fields=['is_thumbnail'])
+                new_thumbnail = next_media.id
+
+        return Response({
+            'message': 'Media deleted successfully',
+            'new_thumbnail_id': new_thumbnail,
+        }, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Set product thumbnail",
+        description="Mark a specific media item as the product thumbnail"
+    )
+    @action(detail=True, methods=['post'], url_path='media/(?P<media_id>[^/.]+)/set_thumbnail')
+    def set_thumbnail(self, request, pk=None, media_id=None):
+        """
+        Set a media item as the product thumbnail.
+        POST /api/products/{id}/media/{media_id}/set_thumbnail/
+        """
+        product = self.get_object()
+        try:
+            media = product.media.get(id=media_id)
+        except ProductMedia.DoesNotExist:
+            return Response({'error': 'Media not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Clear existing thumbnails and set this one
+        product.media.filter(is_thumbnail=True).update(is_thumbnail=False)
+        media.is_thumbnail = True
+        media.save(update_fields=['is_thumbnail'])
+
+        return Response(ProductMediaSerializer(media, context={'request': request}).data)
+
     @extend_schema(
         summary="Select attributes for catalog",
         description="Select which attributes to use for this catalog product"
@@ -288,12 +325,12 @@ class ProductViewSet(viewsets.ModelViewSet):
         """
         product = self.get_object()
         
-        if product.product_type != 'catalog':
+        if product.product_type != ProductType.CATALOG:
             return Response(
                 {'error': 'This action is only for catalog products'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         attribute_ids = request.data.get('attribute_ids', [])
         
         if not attribute_ids:
@@ -382,12 +419,12 @@ class ProductViewSet(viewsets.ModelViewSet):
         """
         product = self.get_object()
         
-        if product.product_type != 'catalog':
+        if product.product_type != ProductType.CATALOG:
             return Response(
                 {'error': 'This action is only for catalog products'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         if not product.selected_attributes.exists():
             return Response(
                 {'error': 'Please select attributes first using /select_attributes/'},
@@ -528,7 +565,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         variant = ProductVariant.objects.create(
             product=product,
             sku=variant_sku,
-            price=price if price is not None else None,  # None = use product base price
+            price=price,  # None = use product base price
             stock=int(stock) if stock else 0,
             is_active=True
         )
@@ -595,3 +632,45 @@ class ProductViewSet(viewsets.ModelViewSet):
         product = self.get_object()
         serializer = StorefrontProductSerializer(product, context={'request': request})
         return Response(serializer.data)
+
+    @extend_schema(summary="Adjust stock based on physical count")
+    @action(detail=True, methods=['post'])
+    def adjust_stock(self, request, pk=None):
+        """
+        Stock adjustment — owner enters physical count, system calculates difference.
+
+        POST /api/products/{id}/adjust_stock/
+        Body: { "physical_count": 6 }
+        """
+        product = self.get_object()
+
+        physical_count = request.data.get('physical_count')
+        if physical_count is None:
+            return Response({'error': 'physical_count is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            physical_count = int(physical_count)
+        except (ValueError, TypeError):
+            return Response({'error': 'physical_count must be a number'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if physical_count < 0:
+            return Response({'error': 'physical_count cannot be negative'}, status=status.HTTP_400_BAD_REQUEST)
+
+        should_be_on_shelf = product.stock + product.reserved
+        difference = physical_count - should_be_on_shelf
+
+        if difference == 0:
+            return Response({'message': 'No adjustment needed, stock matches physical count'})
+
+        Product.objects.filter(pk=product.pk).update(
+            stock=models.F('stock') + difference
+        )
+        product.refresh_from_db()
+
+        return Response({
+            'message': f'Stock adjusted by {"+"+str(difference) if difference > 0 else str(difference)}',
+            'adjustment': difference,
+            'stock': product.stock,
+            'reserved': product.reserved,
+            'should_be_on_shelf': product.stock + product.reserved,
+        })

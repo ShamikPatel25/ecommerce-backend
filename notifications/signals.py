@@ -86,13 +86,19 @@ def product_notification(sender, instance, created, **kwargs):
         )
         _push_to_websocket(notif)
     else:
-        if instance.product_type == 'single' and instance.stock <= LOW_STOCK_THRESHOLD:
+        # Guard: after F() expression updates, instance.stock may be a
+        # CombinedExpression instead of an int. Refresh from DB first.
+        stock = instance.stock
+        if not isinstance(stock, (int, float)):
+            instance.refresh_from_db(fields=['stock'])
+            stock = instance.stock
+        if instance.product_type == 'single' and stock <= LOW_STOCK_THRESHOLD:
             notif = Notification.objects.create(
                 store=instance.store,
                 notification_type=Notification.NotificationType.PRODUCT_LOW_STOCK,
                 title='Low Stock Alert',
-                message=f'"{instance.name}" has only {instance.stock} units left',
-                data={'product_id': instance.id, 'stock': instance.stock},
+                message=f'"{instance.name}" has only {stock} units left',
+                data={'product_id': instance.id, 'stock': stock},
             )
             _push_to_websocket(notif)
 

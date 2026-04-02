@@ -34,7 +34,7 @@ class Attribute(models.Model):
     
     class Meta:
         ordering = ['category', 'name']
-        unique_together = ['store', 'category', 'name']  # No duplicate attribute names per category
+        unique_together = ['store', 'category', 'name']  
         verbose_name = 'Attribute'
         verbose_name_plural = 'Attributes'
     

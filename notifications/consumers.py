@@ -23,8 +23,5 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                 self.room_group_name, self.channel_name
             )
 
-    async def receive_json(self, content, **kwargs):
-        pass
-
     async def send_notification(self, event):
         await self.send_json(event['data'])

@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.text import slugify
 from tenants.models import Store
 
 class Category(models.Model):
@@ -120,6 +121,10 @@ class Product(models.Model):
         default=0,
         help_text='Stock for single products (catalog uses variant stock)'
     )
+    reserved = models.PositiveIntegerField(
+        default=0,
+        help_text='Reserved by orders (pending/confirmed/processing)'
+    )
     
     # Status
     is_active = models.BooleanField(default=True)
@@ -131,12 +136,24 @@ class Product(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+        unique_together = ['store', 'slug']
         indexes = [
             models.Index(fields=['store', 'is_active']),
             models.Index(fields=['sku']),
             models.Index(fields=['product_type']),
         ]
-    
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.name)
+            slug = base_slug
+            counter = 1
+            while Product.objects.filter(store=self.store, slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.name} ({self.get_product_type_display()})"
 
@@ -174,14 +191,26 @@ class ProductMedia(models.Model):
         help_text='Link image to a specific attribute value (e.g., Color: Red). Leave empty for general product images.'
     )
     order = models.PositiveIntegerField(default=0)
-    
+    is_thumbnail = models.BooleanField(
+        default=False,
+        help_text='Mark this image as the product thumbnail. Only one per product.'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['order', 'created_at']
         verbose_name = 'Product Media'
         verbose_name_plural = 'Product Media'
-    
+
+    def save(self, *args, **kwargs):
+        # Ensure only one thumbnail per product
+        if self.is_thumbnail:
+            ProductMedia.objects.filter(
+                product=self.product, is_thumbnail=True
+            ).exclude(pk=self.pk).update(is_thumbnail=False)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.product.name} - {self.media_type}"
 
@@ -251,6 +280,10 @@ class ProductVariant(models.Model):
     
     # Stock for this variant
     stock = models.PositiveIntegerField(default=0)
+    reserved = models.PositiveIntegerField(
+        default=0,
+        help_text='Reserved by orders (pending/confirmed/processing)'
+    )
     
     # Status
     is_active = models.BooleanField(default=True)

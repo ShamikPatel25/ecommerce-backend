@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'attributes',
     'orders',
     'notifications',
+    'storefront',
 ]
 
 MIDDLEWARE = [
@@ -176,10 +177,23 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings (for Next.js frontend)
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',  # Next.js dev server
-    'http://127.0.0.1:3000',
-]
+if DEBUG:
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+    ]
+    # Allow any subdomain of localhost (e.g., nike.localhost:3000)
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r'^http://[\w-]+\.localhost:3000$',
+    ]
+else:
+    # Production: allow main domain + all store subdomains
+    _cors_origins = config('CORS_ALLOWED_ORIGINS', default='').split(',')
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins if o.strip()]
+    # Allow any subdomain of your domain (e.g., nike.myplatform.com)
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r'^https://[\w-]+\.' + config('DOMAIN', default='myplatform.com').replace('.', r'\.') + r'$',
+    ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -189,6 +203,7 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-store-id',
+    'x-tenant',
 ]
 
 # Add logging configuration

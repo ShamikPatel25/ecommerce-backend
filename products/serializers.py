@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
-    Category, Product, ProductMedia, 
-    ProductAttribute, ProductVariant, VariantAttributeValue
+    Category, Product, ProductMedia,
+    ProductAttribute, ProductVariant, VariantAttributeValue, ProductType
 )
 
 class CategoryTreeSerializer(serializers.ModelSerializer):
@@ -77,6 +77,7 @@ class ProductMediaSerializer(serializers.ModelSerializer):
         model = ProductMedia
         fields = [
             'id', 'media_type', 'file', 'file_url', 'alt_text', 'order',
+            'is_thumbnail',
             'attribute_value_id', 'attribute_value_name', 'attribute_name',
             'created_at'
         ]
@@ -112,10 +113,10 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         model = ProductVariant
         fields = [
             'id', 'sku', 'price', 'compare_at_price', 'final_price',
-            'stock', 'is_active', 'attribute_values', 'attribute_values_display',
+            'stock', 'reserved', 'is_active', 'attribute_values', 'attribute_values_display',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'reserved', 'created_at', 'updated_at']
 
 
 class ProductAttributeSerializer(serializers.ModelSerializer):
@@ -146,14 +147,14 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
-            'stock', 'category', 'category_name', 'is_active', 'is_featured',
+            'stock', 'reserved', 'category', 'category_name', 'is_active', 'is_featured',
             'media', 'selected_attributes', 'variants', 'variants_count',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'reserved', 'created_at', 'updated_at']
     
     def get_variants_count(self, obj):
-        if obj.product_type == 'catalog':
+        if obj.product_type == ProductType.CATALOG:
             return obj.variants.count()
         return 0
 
@@ -189,6 +190,20 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                 'is_active': f'Cannot activate product. Category "{category.name}" is inactive. Please activate the category first.'
             })
         return data
+
+    def update(self, instance, validated_data):
+        old_sku = instance.sku
+        product = super().update(instance, validated_data)
+        new_sku = product.sku
+
+        # If SKU changed, update all variant SKUs accordingly
+        if old_sku != new_sku:
+            for variant in product.variants.all():
+                if variant.sku.startswith(old_sku):
+                    variant.sku = new_sku + variant.sku[len(old_sku):]
+                    variant.save(update_fields=['sku'])
+
+        return product
 
 class CombinationSerializer(serializers.Serializer):
     """A single attribute-value combination with optional per-variant price and stock."""
@@ -266,7 +281,7 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
+            'id', 'name', 'slug', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'category_name', 'is_active', 'is_featured',
             'general_images', 'attribute_groups', 'all_media',
             'created_at', 'updated_at'

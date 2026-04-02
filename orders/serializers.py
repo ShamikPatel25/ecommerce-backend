@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from .models import Order, OrderItem
 from products.models import Product, ProductVariant
@@ -42,7 +43,7 @@ class OrderSerializer(serializers.ModelSerializer):
 class OrderItemCreateSerializer(serializers.Serializer):
     product  = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     variant  = serializers.PrimaryKeyRelatedField(
-        queryset=ProductVariant.objects.all(), required=False, allow_null=True
+        queryset=ProductVariant.objects.all(), required=False, allow_null=True, default=None
     )
     quantity   = serializers.IntegerField(min_value=1, default=1)
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
@@ -50,10 +51,15 @@ class OrderItemCreateSerializer(serializers.Serializer):
 
 class OrderCreateSerializer(serializers.Serializer):
     customer_name  = serializers.CharField(max_length=255)
-    customer_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
-    customer_phone = serializers.CharField(max_length=30, required=False, allow_blank=True, allow_null=True)
+    customer_email = serializers.EmailField()
+    customer_phone = serializers.CharField(max_length=10, min_length=10)
     notes          = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     items          = OrderItemCreateSerializer(many=True)
+
+    def validate_customer_phone(self, value):
+        if not re.match(r'^\d{10}$', value):
+            raise serializers.ValidationError('Phone must be exactly 10 digits.')
+        return value
 
     def validate_items(self, value):
         if not value:

@@ -1,0 +1,11 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('store/', views.StorefrontStoreInfoView.as_view()),
+    path('categories/', views.StorefrontCategoryListView.as_view()),
+    path('products/', views.StorefrontProductListView.as_view()),
+    path('products/<slug:slug>/', views.StorefrontProductDetailView.as_view()),
+    path('orders/', views.StorefrontOrderCreateView.as_view()),
+    path('orders/<int:order_id>/return/', views.StorefrontReturnRequestView.as_view()),
+]

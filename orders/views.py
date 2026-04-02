@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Count, Sum, Max, F
+from django.db.models import Count, Sum, Max
 
 from .models import Order, OrderItem
 from .serializers import (
@@ -12,6 +12,7 @@ from .serializers import (
     OrderCreateSerializer,
     OrderStatusUpdateSerializer,
 )
+from .utils import decrement_stock, restore_stock, reduce_reserved, restore_stock_only
 from tenants.utils import get_tenant_model
 
 
@@ -43,52 +44,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=status_filter)
         return qs
 
-    # ── Stock helpers ─────────────────────────────────────────────────────
-
-    @staticmethod
-    def _decrement_stock(item_data):
-        """Decrement product/variant stock. Raises ValueError on insufficient stock."""
-        product = item_data['product']
-        variant = item_data.get('variant')
-        qty = item_data['quantity']
-
-        if variant:
-            # Use select_for_update to prevent race conditions
-            from products.models import ProductVariant
-            v = ProductVariant.objects.select_for_update().get(pk=variant.pk)
-            if v.stock < qty:
-                raise ValueError(
-                    f'Insufficient stock for variant "{v.sku}": '
-                    f'requested {qty}, available {v.stock}'
-                )
-            v.stock = F('stock') - qty
-            v.save(update_fields=['stock'])
-        else:
-            from products.models import Product
-            p = Product.objects.select_for_update().get(pk=product.pk)
-            if p.stock < qty:
-                raise ValueError(
-                    f'Insufficient stock for product "{p.name}": '
-                    f'requested {qty}, available {p.stock}'
-                )
-            p.stock = F('stock') - qty
-            p.save(update_fields=['stock'])
-
-    @staticmethod
-    def _restore_stock(order):
-        """Restore stock for all items in an order (used on cancellation)."""
-        for item in order.items.select_related('product', 'variant').all():
-            if item.variant:
-                from products.models import ProductVariant
-                ProductVariant.objects.filter(pk=item.variant_id).update(
-                    stock=F('stock') + item.quantity
-                )
-            elif item.product:
-                from products.models import Product
-                Product.objects.filter(pk=item.product_id).update(
-                    stock=F('stock') + item.quantity
-                )
-
     # ── CRUD ──────────────────────────────────────────────────────────────
 
     @extend_schema(summary='Create a new order', request=OrderCreateSerializer)
@@ -109,7 +64,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
                 for item_data in data['items']:
                     # Decrement stock before creating the item
-                    self._decrement_stock(item_data)
+                    decrement_stock(item_data)
 
                     OrderItem.objects.create(
                         order=order,
@@ -124,8 +79,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OrderSerializer(order, context={'request': request}).data,
                 status=status.HTTP_201_CREATED,
             )
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -140,10 +93,27 @@ class OrderViewSet(viewsets.ModelViewSet):
         new_status = serializer.validated_data['status']
         old_status = order.status
 
+        # Validate status transition
+        valid_next = Order.VALID_TRANSITIONS.get(old_status, [])
+        if new_status not in valid_next:
+            return Response(
+                {'error': f'Cannot change status from "{old_status}" to "{new_status}". '
+                          f'Allowed: {", ".join(valid_next) if valid_next else "none (final status)"}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
-            # Restore stock when an order is cancelled (only if it wasn't already cancelled)
-            if new_status == 'cancelled' and old_status != 'cancelled':
-                self._restore_stock(order)
+            # Cancel (before shipping) → stock +1, reserved -1
+            if new_status == 'cancelled':
+                restore_stock(order)
+
+            # Shipped → reserved -1 (bottle left shelf)
+            if new_status == 'shipped' and old_status != 'shipped':
+                reduce_reserved(order)
+
+            # Returned (bottle back at store) → stock +1
+            if new_status == 'returned' and old_status == 'return_requested':
+                restore_stock_only(order)
 
             order.status = new_status
             if serializer.validated_data.get('notes') is not None:
@@ -174,16 +144,21 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         return Response(list(rows))
 
-    @extend_schema(summary='Orders for a single customer (by email)')
+    @extend_schema(summary='Orders for a single customer (by email or name)')
     @action(detail=False, methods=['get'], url_path='customers/by-email')
     def customer_detail(self, request):
         email = request.query_params.get('email', '').strip()
-        if not email:
-            return Response({'error': 'email query param required'}, status=400)
+        name = request.query_params.get('name', '').strip()
+
+        if not email and not name:
+            return Response({'error': 'email or name query param required'}, status=400)
 
         base_qs = get_tenant_model(request, Order)
-        orders = base_qs.filter(customer_email=email).prefetch_related(
-            'items__product', 'items__variant__attribute_values'
-        )
+        if email:
+            orders = base_qs.filter(customer_email=email)
+        else:
+            orders = base_qs.filter(customer_name=name, customer_email__isnull=True)
+
+        orders = orders.prefetch_related('items__product', 'items__variant__attribute_values')
         return Response(OrderSerializer(orders, many=True, context={'request': request}).data)
 

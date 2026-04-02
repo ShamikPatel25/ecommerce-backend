@@ -6,6 +6,7 @@ class Notification(models.Model):
     class NotificationType(models.TextChoices):
         ORDER_CREATED = 'order_created', 'Order Created'
         ORDER_STATUS_CHANGED = 'order_status_changed', 'Order Status Changed'
+        ORDER_RETURN_REQUESTED = 'order_return_requested', 'Order Return Requested'
         PRODUCT_CREATED = 'product_created', 'Product Created'
         PRODUCT_DELETED = 'product_deleted', 'Product Deleted'
         PRODUCT_LOW_STOCK = 'product_low_stock', 'Product Low Stock'

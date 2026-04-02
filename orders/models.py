@@ -4,20 +4,34 @@ from products.models import Product, ProductVariant
 
 class Order(models.Model):
     STATUS_CHOICES = [
-        ('pending',    'Pending'),
-        ('confirmed',  'Confirmed'),
-        ('processing', 'Processing'),
-        ('shipped',    'Shipped'),
-        ('delivered',  'Delivered'),
-        ('cancelled',  'Cancelled'),
+        ('pending',          'Pending'),
+        ('confirmed',        'Confirmed'),
+        ('processing',       'Processing'),
+        ('shipped',          'Shipped'),
+        ('delivered',        'Delivered'),
+        ('cancelled',        'Cancelled'),
+        ('return_requested', 'Return Requested'),
+        ('returned',         'Returned'),
     ]
+
+    # Valid status transitions
+    VALID_TRANSITIONS = {
+        'pending':          ['confirmed', 'cancelled'],
+        'confirmed':        ['processing', 'cancelled'],
+        'processing':       ['shipped', 'cancelled'],
+        'shipped':          ['delivered'],
+        'delivered':        ['return_requested'],
+        'return_requested': ['returned'],
+        'cancelled':        [],
+        'returned':         [],
+    }
 
     store           = models.ForeignKey(
         'tenants.Store', on_delete=models.CASCADE, related_name='orders'
     )
     customer_name   = models.CharField(max_length=255)
-    customer_email  = models.EmailField(blank=True, null=True)
-    customer_phone  = models.CharField(max_length=30, blank=True, null=True)
+    customer_email  = models.EmailField()
+    customer_phone  = models.CharField(max_length=30)
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_amount    = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes           = models.TextField(blank=True, null=True)

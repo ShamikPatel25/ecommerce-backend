@@ -56,7 +56,6 @@ class Store(models.Model):
         verbose_name = 'Store'
         verbose_name_plural = 'Stores'
         indexes = [
-            models.Index(fields=['subdomain']),  
             models.Index(fields=['is_active', 'created_at']),
         ]
     
@@ -64,5 +63,9 @@ class Store(models.Model):
         return f"{self.name} ({self.subdomain})"
     
     def get_full_domain(self):
-        """Returns full domain: subdomain.myplatform.com"""
-        return f"{self.subdomain}.myplatform.com"
+        """Returns full domain based on environment."""
+        if settings.DEBUG:
+            return f"{self.subdomain}.localhost:3000"
+        from decouple import config
+        domain = config('DOMAIN', default='myplatform.com')
+        return f"{self.subdomain}.{domain}"

@@ -92,11 +92,6 @@ class AttributeViewSet(viewsets.ModelViewSet):
             if to_create:
                 AttributeValue.objects.bulk_create(to_create)
 
-    def perform_destroy(self, instance):
-        """Delete attribute and all its values"""
-        instance.delete()
-
-    
     @extend_schema(
         summary="Add single value to attribute",
         description="Add one value at a time (e.g., add '30' to Size attribute)",
