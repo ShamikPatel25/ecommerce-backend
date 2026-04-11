@@ -1,3 +1,5 @@
+import logging
+
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -5,6 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Count, Sum, Max
+
+logger = logging.getLogger(__name__)
 
 from .models import Order, OrderItem
 from .serializers import (
@@ -79,8 +83,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OrderSerializer(order, context={'request': request}).data,
                 status=status.HTTP_201_CREATED,
             )
-        except Exception as e:
+        except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception('Unexpected error creating order')
+            return Response({'error': 'Failed to create order'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @extend_schema(summary='Update order status', request=OrderStatusUpdateSerializer)
     @action(detail=True, methods=['patch'], url_path='status')

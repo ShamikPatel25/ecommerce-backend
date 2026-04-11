@@ -5,7 +5,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction, models
 from itertools import product as itertools_product
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     Category, Product, ProductMedia, ProductAttribute,
@@ -110,10 +113,16 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Filter by price range
         min_price = params.get('min_price')
         if min_price:
-            qs = qs.filter(price__gte=min_price)
+            try:
+                qs = qs.filter(price__gte=float(min_price))
+            except ValueError:
+                pass
         max_price = params.get('max_price')
         if max_price:
-            qs = qs.filter(price__lte=max_price)
+            try:
+                qs = qs.filter(price__lte=float(max_price))
+            except ValueError:
+                pass
 
         # Filter by stock status
         stock_status = params.get('stock_status')
@@ -141,7 +150,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         sku = request.data.get('sku', '').strip().upper()
         if not sku:
             return Response({'exists': False})
-        exists = Product.objects.filter(sku=sku).exists()
+        exists = Product.objects.filter(store=request.tenant, sku=sku).exists()
         return Response({'exists': exists})
 
     @extend_schema(
@@ -178,55 +187,15 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Optional: link to an attribute value
-        attribute_value_id = request.data.get('attribute_value_id')
-        attribute_value_obj = None
-        if attribute_value_id:
-            try:
-                attribute_value_obj = AttributeValue.objects.get(id=attribute_value_id)
-            except AttributeValue.DoesNotExist:
-                return Response(
-                    {'error': 'Attribute value not found'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        # Resolve attribute value (explicit or auto-detected)
+        attribute_value_obj, auto_detected, error_response = self._resolve_attribute_value(
+            request, product, file
+        )
+        if error_response:
+            return error_response
 
-        # Auto-detect attribute value from filename if not explicitly provided
-        auto_detected = False
-        if not attribute_value_obj and product.product_type == ProductType.CATALOG:
-            filename_raw = os.path.splitext(file.name)[0]  # e.g. "polo_tshirt_red"
-            filename_lower = filename_raw.lower().replace('-', '_').replace(' ', '_')
-
-            # Get all attribute values for this product's selected attributes
-            selected_attr_ids = product.selected_attributes.values_list('attribute_id', flat=True)
-            candidate_values = AttributeValue.objects.filter(
-                attribute_id__in=selected_attr_ids
-            ).select_related('attribute')
-
-            # Try to match: check if any attribute value name appears in the filename
-            # Prefer longest match first to avoid "black" matching before "blackberry"
-            best_match = None
-            best_len = 0
-            for av in candidate_values:
-                val_lower = av.value.lower().replace('-', '_').replace(' ', '_')
-                if val_lower in filename_lower and len(val_lower) > best_len:
-                    best_match = av
-                    best_len = len(val_lower)
-
-            if best_match:
-                attribute_value_obj = best_match
-                auto_detected = True
-
-        # Auto-generate alt_text based on product name + attribute value
-        alt_text = request.data.get('alt_text', '')
-        if not alt_text:
-            slug = product.name.lower().replace(' ', '_')
-            if attribute_value_obj:
-                val_slug = attribute_value_obj.value.lower().replace(' ', '_')
-                existing_count = product.media.filter(attribute_value=attribute_value_obj).count()
-                alt_text = f"{slug}_{val_slug}_{existing_count + 1}"
-            else:
-                existing_count = product.media.filter(attribute_value__isnull=True).count()
-                alt_text = f"{slug}_{existing_count + 1}" if existing_count > 0 else slug
+        # Generate alt_text
+        alt_text = self._generate_alt_text(request, product, attribute_value_obj)
 
         media = ProductMedia.objects.create(
             product=product,
@@ -235,7 +204,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             alt_text=alt_text,
             attribute_value=attribute_value_obj,
             order=request.data.get('order', 0),
-            is_thumbnail=request.data.get('is_thumbnail', 'false').lower() in ('true', '1'),
+            is_thumbnail=str(request.data.get('is_thumbnail', 'false')).lower() in ('true', '1'),
         )
 
         serializer = ProductMediaSerializer(media, context={'request': request})
@@ -244,6 +213,68 @@ class ProductViewSet(viewsets.ModelViewSet):
             response_data['auto_detected'] = True
             response_data['auto_detected_label'] = f"{attribute_value_obj.attribute.name}: {attribute_value_obj.value}"
         return Response(response_data, status=status.HTTP_201_CREATED)
+
+    def _resolve_attribute_value(self, request, product, file):
+        """Resolve the attribute value from an explicit ID or by auto-detecting from the filename.
+
+        Returns (attribute_value_obj, auto_detected, error_response).
+        If error_response is not None, the caller should return it immediately.
+        """
+        attribute_value_id = request.data.get('attribute_value_id')
+        attribute_value_obj = None
+        auto_detected = False
+
+        if attribute_value_id:
+            try:
+                attribute_value_obj = AttributeValue.objects.get(id=attribute_value_id)
+            except AttributeValue.DoesNotExist:
+                return None, False, Response(
+                    {'error': 'Attribute value not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return attribute_value_obj, False, None
+
+        # Auto-detect from filename for catalog products
+        if product.product_type == ProductType.CATALOG:
+            attribute_value_obj = self._auto_detect_attribute_value(product, file)
+            auto_detected = attribute_value_obj is not None
+
+        return attribute_value_obj, auto_detected, None
+
+    def _auto_detect_attribute_value(self, product, file):
+        """Try to match an attribute value from the uploaded filename."""
+        filename_raw = os.path.splitext(file.name)[0]
+        filename_lower = filename_raw.lower().replace('-', '_').replace(' ', '_')
+
+        selected_attr_ids = product.selected_attributes.values_list('attribute_id', flat=True)
+        candidate_values = AttributeValue.objects.filter(
+            attribute_id__in=selected_attr_ids
+        ).select_related('attribute')
+
+        best_match = None
+        best_len = 0
+        for av in candidate_values:
+            val_lower = av.value.lower().replace('-', '_').replace(' ', '_')
+            if val_lower in filename_lower and len(val_lower) > best_len:
+                best_match = av
+                best_len = len(val_lower)
+
+        return best_match
+
+    def _generate_alt_text(self, request, product, attribute_value_obj):
+        """Generate alt_text for the media, falling back to auto-generated text."""
+        alt_text = request.data.get('alt_text', '')
+        if alt_text:
+            return alt_text
+
+        slug = product.name.lower().replace(' ', '_')
+        if attribute_value_obj:
+            val_slug = attribute_value_obj.value.lower().replace(' ', '_')
+            existing_count = product.media.filter(attribute_value=attribute_value_obj).count()
+            return f"{slug}_{val_slug}_{existing_count + 1}"
+
+        existing_count = product.media.filter(attribute_value__isnull=True).count()
+        return f"{slug}_{existing_count + 1}" if existing_count > 0 else slug
 
     @extend_schema(
         summary="Delete product media",
@@ -473,10 +504,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                     'variants': ProductVariantSerializer(created_variants, many=True).data
                 }, status=status.HTTP_201_CREATED)
         
-        except Exception as e:
+        except ValueError as e:
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception:
+            logger.exception('Unexpected error generating catalog for product %s', pk)
+            return Response(
+                {'error': 'Failed to generate catalog'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @extend_schema(summary="Update a single catalog variant")
@@ -497,7 +534,10 @@ class ProductViewSet(viewsets.ModelViewSet):
         price = request.data.get('price')
 
         if stock is not None:
-            variant.stock = int(stock)
+            try:
+                variant.stock = int(stock)
+            except (ValueError, TypeError):
+                return Response({'error': 'stock must be a number'}, status=status.HTTP_400_BAD_REQUEST)
         if price is not None:
             variant.price = price if price != '' else None
         variant.save()

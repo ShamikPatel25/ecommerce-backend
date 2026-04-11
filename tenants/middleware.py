@@ -1,16 +1,12 @@
+import logging
+
 from django.http import JsonResponse
 from .models import Store
 
+logger = logging.getLogger(__name__)
+
 
 class TenantMiddleware:
-    """
-    Middleware to identify and attach the tenant (Store) to each request.
-
-    Resolution order:
-    1. X-Tenant header (subdomain name sent by frontend, e.g. "nike")
-    2. X-Store-Id header (legacy store ID, e.g. "3")
-    3. Subdomain from Host header (production: nike.myplatform.com)
-    """
 
     EXEMPT_PATHS = [
         '/admin/',
@@ -31,43 +27,54 @@ class TenantMiddleware:
             request.tenant = None
             return self.get_response(request)
 
-        store = None
-
-        # 1. Try X-Tenant header (subdomain name from frontend middleware)
-        tenant_subdomain = request.META.get('HTTP_X_TENANT')
-        if tenant_subdomain:
-            store = Store.objects.filter(
-                subdomain=tenant_subdomain.lower().strip(),
-                is_active=True
-            ).first()
-
-        # 2. Fallback: Try X-Store-Id header (legacy dev mode)
-        if not store:
-            store_id = request.META.get('HTTP_X_STORE_ID')
-            if store_id:
-                try:
-                    store = Store.objects.filter(id=int(store_id), is_active=True).first()
-                except (ValueError, TypeError):
-                    pass
+        store = (
+            self._resolve_from_tenant_header(request)
+            or self._resolve_from_store_id_header(request)
+        )
 
         # 3. Fallback: Try subdomain from Host header (production)
         if not store:
-            host = request.get_host()
-            subdomain = self.extract_subdomain(host)
-            if subdomain and subdomain not in ['localhost', '127.0.0.1']:
-                try:
-                    store = Store.objects.get(subdomain=subdomain, is_active=True)
-                except Store.DoesNotExist:
-                    return JsonResponse({
-                        'error': f'Store not found for subdomain: {subdomain}'
-                    }, status=404)
-                except Exception as e:
-                    return JsonResponse({
-                        'error': f'Tenant resolution failed: {str(e)}'
-                    }, status=500)
+            result = self._resolve_from_host(request)
+            if isinstance(result, JsonResponse):
+                return result
+            store = result
 
         request.tenant = store
         return self.get_response(request)
+
+    def _resolve_from_tenant_header(self, request):
+        """Try X-Tenant header (subdomain name from frontend middleware)."""
+        tenant_subdomain = request.META.get('HTTP_X_TENANT')
+        if not tenant_subdomain:
+            return None
+        return Store.objects.filter(
+            subdomain=tenant_subdomain.lower().strip(),
+            is_active=True
+        ).first()
+
+    def _resolve_from_store_id_header(self, request):
+        """Try X-Store-Id header (legacy dev mode)."""
+        store_id = request.META.get('HTTP_X_STORE_ID')
+        if not store_id:
+            return None
+        try:
+            return Store.objects.filter(id=int(store_id), is_active=True).first()
+        except (ValueError, TypeError):
+            logger.debug('Invalid X-Store-Id header')
+            return None
+
+    def _resolve_from_host(self, request):
+        host = request.get_host()
+        subdomain = self.extract_subdomain(host)
+        if not subdomain or subdomain in ['localhost', '127.0.0.1']:
+            return None
+        try:
+            return Store.objects.get(subdomain=subdomain, is_active=True)
+        except Store.DoesNotExist:
+            return JsonResponse({'error': 'Store not found'}, status=404)
+        except Exception as e:
+            logger.error('Tenant resolution failed: %s', e)
+            return JsonResponse({'error': 'Internal server error'}, status=500)
 
     def extract_subdomain(self, host):
         """

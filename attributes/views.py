@@ -232,12 +232,25 @@ class AttributeViewSet(viewsets.ModelViewSet):
     def by_category(self, request, category_id=None):
         """
         Get attributes by category
-        
+
         GET /api/attributes/category/{category_id}/
+
+        Walks up to the root parent category, since attributes
+        are defined at the root category level.
         """
-        attributes = self.get_queryset().filter(category_id=category_id)
+        from products.models import Category
+        try:
+            cat = Category.objects.get(id=category_id, store=request.tenant)
+            # Walk up to root category
+            while cat.parent_id:
+                cat = Category.objects.get(id=cat.parent_id)
+            root_category_id = cat.id
+        except Category.DoesNotExist:
+            root_category_id = category_id
+
+        attributes = self.get_queryset().filter(category_id=root_category_id)
         serializer = self.get_serializer(attributes, many=True)
-        
+
         return Response({
             'count': attributes.count(),
             'attributes': serializer.data

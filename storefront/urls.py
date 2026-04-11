@@ -8,4 +8,6 @@ urlpatterns = [
     path('products/<slug:slug>/', views.StorefrontProductDetailView.as_view()),
     path('orders/', views.StorefrontOrderCreateView.as_view()),
     path('orders/<int:order_id>/return/', views.StorefrontReturnRequestView.as_view()),
+    path('customer/orders/', views.StorefrontCustomerOrdersView.as_view()),
+    path('customer/orders/<int:order_id>/', views.StorefrontCustomerOrderDetailView.as_view()),
 ]

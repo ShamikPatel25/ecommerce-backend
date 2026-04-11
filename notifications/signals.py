@@ -1,3 +1,5 @@
+import logging
+
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from channels.layers import get_channel_layer
@@ -8,6 +10,8 @@ from products.models import Product, Category
 from attributes.models import Attribute
 from tenants.models import Store
 from .models import Notification
+
+logger = logging.getLogger(__name__)
 
 LOW_STOCK_THRESHOLD = 5
 
@@ -105,14 +109,17 @@ def product_notification(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=Product)
 def product_deleted_notification(sender, instance, **kwargs):
-    notif = Notification.objects.create(
-        store=instance.store,
-        notification_type=Notification.NotificationType.PRODUCT_DELETED,
-        title='Product Deleted',
-        message=f'Product "{instance.name}" was deleted',
-        data={'sku': instance.sku},
-    )
-    _push_to_websocket(notif)
+    try:
+        notif = Notification.objects.create(
+            store=instance.store,
+            notification_type=Notification.NotificationType.PRODUCT_DELETED,
+            title='Product Deleted',
+            message=f'Product "{instance.name}" was deleted',
+            data={'sku': instance.sku},
+        )
+        _push_to_websocket(notif)
+    except Exception:
+        logger.warning('Failed to create notification for product deletion: %s', instance.pk)
 
 
 # ──────────────────────── CATEGORY ────────────────────────
@@ -132,14 +139,17 @@ def category_notification(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=Category)
 def category_deleted_notification(sender, instance, **kwargs):
-    notif = Notification.objects.create(
-        store=instance.store,
-        notification_type=Notification.NotificationType.CATEGORY_DELETED,
-        title='Category Deleted',
-        message=f'Category "{instance.name}" was deleted',
-        data={},
-    )
-    _push_to_websocket(notif)
+    try:
+        notif = Notification.objects.create(
+            store=instance.store,
+            notification_type=Notification.NotificationType.CATEGORY_DELETED,
+            title='Category Deleted',
+            message=f'Category "{instance.name}" was deleted',
+            data={},
+        )
+        _push_to_websocket(notif)
+    except Exception:
+        logger.warning('Failed to create notification for category deletion: %s', instance.pk)
 
 
 # ──────────────────────── ATTRIBUTE ────────────────────────
@@ -159,14 +169,17 @@ def attribute_notification(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=Attribute)
 def attribute_deleted_notification(sender, instance, **kwargs):
-    notif = Notification.objects.create(
-        store=instance.store,
-        notification_type=Notification.NotificationType.ATTRIBUTE_DELETED,
-        title='Attribute Deleted',
-        message=f'Attribute "{instance.name}" was deleted',
-        data={'category': instance.category.name},
-    )
-    _push_to_websocket(notif)
+    try:
+        notif = Notification.objects.create(
+            store=instance.store,
+            notification_type=Notification.NotificationType.ATTRIBUTE_DELETED,
+            title='Attribute Deleted',
+            message=f'Attribute "{instance.name}" was deleted',
+            data={'category': instance.category.name},
+        )
+        _push_to_websocket(notif)
+    except Exception:
+        logger.warning('Failed to create notification for attribute deletion: %s', instance.pk)
 
 
 # ──────────────────────── STORE ────────────────────────

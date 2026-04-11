@@ -181,10 +181,14 @@ if DEBUG:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
+        'http://192.168.1.35:3000',
     ]
     # Allow any subdomain of localhost (e.g., nike.localhost:3000)
     CORS_ALLOWED_ORIGIN_REGEXES = [
         r'^http://[\w-]+\.localhost:3000$',
+        r'^http://192\.168\.\d+\.\d+:3000$',
+        r'^http://[a-zA-Z0-9-.]+\.nip\.io:3000$',
+        r'^https://[a-zA-Z0-9-]+\.loca\.lt$',
     ]
 else:
     # Production: allow main domain + all store subdomains
@@ -226,7 +230,7 @@ LOGGING = {
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-EMAIL_USE_TLS = True
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER', default='noreply@ecommerce.com')
@@ -237,12 +241,27 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 # Password reset token valid for 1 hour
 PASSWORD_RESET_TIMEOUT = 3600
 
-# Channels (WebSocket)
+# ── Security headers (production only) ────────────────────────────
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    X_FRAME_OPTIONS = 'DENY'
+
+# Channels (WebSocket) — use explicit host/port so Docker service-name DNS resolves correctly
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [config('REDIS_URL', default='redis://localhost:6379/0')],
+            'hosts': [(
+                config('REDIS_HOST', default='127.0.0.1'),
+                config('REDIS_PORT', default=6379, cast=int),
+            )],
         },
     },
 }

@@ -2,11 +2,11 @@ from django.db import migrations, models
 
 
 def backfill_nulls(apps, schema_editor):
-    Order = apps.get_model('orders', 'Order')
-    Order.objects.filter(customer_email__isnull=True).update(customer_email='unknown@example.com')
-    Order.objects.filter(customer_email='').update(customer_email='unknown@example.com')
-    Order.objects.filter(customer_phone__isnull=True).update(customer_phone='N/A')
-    Order.objects.filter(customer_phone='').update(customer_phone='N/A')
+    order_model = apps.get_model('orders', 'Order')
+    order_model.objects.filter(customer_email__isnull=True).update(customer_email='unknown@example.com')
+    order_model.objects.filter(customer_email='').update(customer_email='unknown@example.com')
+    order_model.objects.filter(customer_phone__isnull=True).update(customer_phone='N/A')
+    order_model.objects.filter(customer_phone='').update(customer_phone='N/A')
 
 
 class Migration(migrations.Migration):

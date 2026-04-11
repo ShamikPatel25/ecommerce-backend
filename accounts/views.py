@@ -1,6 +1,6 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, generics
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -21,10 +21,11 @@ User = get_user_model()
 class RegisterView(generics.CreateAPIView):
     """
     Register a new user account
-    
+
     Creates a new user and returns JWT tokens for immediate authentication.
     """
     permission_classes = [AllowAny]
+    authentication_classes = []
     serializer_class = UserRegistrationSerializer
     
     @extend_schema(
@@ -98,6 +99,7 @@ class RegisterView(generics.CreateAPIView):
     }
 )
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login_view(request):
     """User login endpoint"""
@@ -182,6 +184,7 @@ def change_password_view(request):
     description="Send a password reset link to the user's email. Always returns success message for security.",
 )
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def forgot_password_view(request):
     serializer = ForgotPasswordSerializer(data=request.data)
@@ -207,6 +210,7 @@ def forgot_password_view(request):
     description="Check if a password reset token is still valid.",
 )
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def verify_reset_token_view(request):
     uid = request.data.get('uid')
@@ -233,6 +237,7 @@ def verify_reset_token_view(request):
     description="Set a new password using the reset token.",
 )
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def reset_password_view(request):
     serializer = ResetPasswordSerializer(data=request.data)

@@ -277,13 +277,14 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
     general_images = serializers.SerializerMethodField()
     attribute_groups = serializers.SerializerMethodField()
     all_media = serializers.SerializerMethodField()
+    variants = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'category_name', 'is_active', 'is_featured',
-            'general_images', 'attribute_groups', 'all_media',
+            'general_images', 'attribute_groups', 'all_media', 'variants',
             'created_at', 'updated_at'
         ]
 
@@ -293,6 +294,15 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
             many=True,
             context=self.context
         ).data
+
+    def get_variants(self, obj):
+        """Simple variant list for cart stock validation."""
+        if obj.product_type != 'catalog':
+            return []
+        return [
+            {'id': v.id, 'sku': v.sku, 'stock': v.stock, 'price': str(v.final_price)}
+            for v in obj.variants.filter(is_active=True)
+        ]
 
     def get_general_images(self, obj):
         """Images not linked to any attribute value — the main product images."""
@@ -311,65 +321,14 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
         if not selected_attrs:
             return []
 
-        variants = obj.variants.filter(is_active=True, stock__gt=0).prefetch_related(
+        variants = obj.variants.filter(is_active=True).prefetch_related(
             'attribute_values__attribute_value__attribute'
         )
 
         groups = []
         for prod_attr in selected_attrs:
             attr = prod_attr.attribute
-            attr_values = attr.values.all()
-
-            values_data = []
-            for av in attr_values:
-                # Find variants that have this attribute value
-                matching_variants = []
-                for variant in variants:
-                    vav_ids = [
-                        vav.attribute_value_id
-                        for vav in variant.attribute_values.all()
-                    ]
-                    if av.id in vav_ids:
-                        matching_variants.append(variant)
-
-                if not matching_variants:
-                    continue
-
-                # Images linked to this attribute value
-                images = obj.media.filter(attribute_value=av)
-                image_data = ProductMediaSerializer(images, many=True, context=self.context).data
-
-                # Collect available values from OTHER attributes for these variants
-                other_attrs_data = []
-                for other_prod_attr in selected_attrs:
-                    if other_prod_attr.attribute_id == attr.id:
-                        continue
-                    other_values = []
-                    for variant in matching_variants:
-                        for vav in variant.attribute_values.all():
-                            if vav.attribute_value.attribute_id == other_prod_attr.attribute_id:
-                                other_values.append({
-                                    'value_id': vav.attribute_value_id,
-                                    'value': vav.attribute_value.value,
-                                    'variant_id': variant.id,
-                                    'variant_sku': variant.sku,
-                                    'stock': variant.stock,
-                                    'price': str(variant.final_price),
-                                    'is_active': variant.is_active,
-                                })
-                    other_attrs_data.append({
-                        'attribute_name': other_prod_attr.attribute.name,
-                        'attribute_id': other_prod_attr.attribute_id,
-                        'available_values': other_values,
-                    })
-
-                values_data.append({
-                    'value_id': av.id,
-                    'value': av.value,
-                    'images': image_data,
-                    'available_variants': other_attrs_data,
-                })
-
+            values_data = self._build_attribute_values(obj, attr, selected_attrs, variants)
             groups.append({
                 'attribute_name': attr.name,
                 'attribute_id': attr.id,
@@ -377,3 +336,66 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
             })
 
         return groups
+
+    def _build_attribute_values(self, obj, attr, selected_attrs, variants):
+        """Build the list of value entries for a single attribute."""
+        values_data = []
+        for av in attr.values.all():
+            matching_variants = self._find_matching_variants(av, variants)
+            if not matching_variants:
+                continue
+
+            images = obj.media.filter(attribute_value=av)
+            image_data = ProductMediaSerializer(images, many=True, context=self.context).data
+
+            other_attrs_data = self._collect_other_attribute_data(
+                attr, selected_attrs, matching_variants
+            )
+
+            values_data.append({
+                'value_id': av.id,
+                'value': av.value,
+                'images': image_data,
+                'available_variants': other_attrs_data,
+            })
+        return values_data
+
+    @staticmethod
+    def _find_matching_variants(attribute_value, variants):
+        """Return variants that contain the given attribute value."""
+        matching = []
+        for variant in variants:
+            vav_ids = [
+                vav.attribute_value_id
+                for vav in variant.attribute_values.all()
+            ]
+            if attribute_value.id in vav_ids:
+                matching.append(variant)
+        return matching
+
+    @staticmethod
+    def _collect_other_attribute_data(current_attr, selected_attrs, matching_variants):
+        """Collect available values from attributes other than *current_attr*."""
+        other_attrs_data = []
+        for other_prod_attr in selected_attrs:
+            if other_prod_attr.attribute_id == current_attr.id:
+                continue
+            other_values = []
+            for variant in matching_variants:
+                for vav in variant.attribute_values.all():
+                    if vav.attribute_value.attribute_id == other_prod_attr.attribute_id:
+                        other_values.append({
+                            'value_id': vav.attribute_value_id,
+                            'value': vav.attribute_value.value,
+                            'variant_id': variant.id,
+                            'variant_sku': variant.sku,
+                            'stock': variant.stock,
+                            'price': str(variant.final_price),
+                            'is_active': variant.is_active,
+                        })
+            other_attrs_data.append({
+                'attribute_name': other_prod_attr.attribute.name,
+                'attribute_id': other_prod_attr.attribute_id,
+                'available_values': other_values,
+            })
+        return other_attrs_data

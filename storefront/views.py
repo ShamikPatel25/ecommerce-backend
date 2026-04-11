@@ -1,9 +1,10 @@
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 
 from products.models import Product, Category
 from products.serializers import StorefrontProductSerializer, CategoryTreeSerializer
@@ -12,14 +13,17 @@ from orders.serializers import OrderCreateSerializer, OrderSerializer
 from orders.utils import decrement_stock
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
 
+_STORE_NOT_FOUND_MSG = 'Store not found'
+
 
 class StorefrontStoreInfoView(APIView):
     """GET /api/storefront/store/ — public store info."""
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def get(self, request):
         if not request.tenant:
-            return Response({'error': 'Store not found'}, status=404)
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         serializer = StorefrontStoreSerializer(request.tenant)
         return Response(serializer.data)
 
@@ -27,6 +31,7 @@ class StorefrontStoreInfoView(APIView):
 class StorefrontCategoryListView(APIView):
     """GET /api/storefront/categories/ — active category tree."""
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def get(self, request):
         if not request.tenant:
@@ -41,6 +46,7 @@ class StorefrontCategoryListView(APIView):
 class StorefrontProductListView(generics.ListAPIView):
     """GET /api/storefront/products/ — product listing with filters."""
     permission_classes = [AllowAny]
+    authentication_classes = []
     serializer_class = StorefrontProductListSerializer
 
     def get_queryset(self):
@@ -51,22 +57,25 @@ class StorefrontProductListView(generics.ListAPIView):
             store=self.request.tenant, is_active=True
         ).select_related('category').prefetch_related('media', 'variants')
 
+        # Hide out-of-stock products:
+        # Single products with stock=0, catalog products where all variant stock=0
+        qs = qs.annotate(
+            _variant_stock=Coalesce(
+                Sum('variants__stock', filter=Q(variants__is_active=True)),
+                0
+            )
+        ).exclude(
+            product_type='single', stock=0
+        ).exclude(
+            product_type='catalog', _variant_stock=0
+        )
+
         # Category filter (by slug, includes children)
         category_slug = self.request.query_params.get('category')
         if category_slug:
-            try:
-                cat = Category.objects.get(
-                    store=self.request.tenant, slug=category_slug, is_active=True
-                )
-                # Include the category + all its descendants
-                cat_ids = [cat.id]
-                for child in cat.children.filter(is_active=True):
-                    cat_ids.append(child.id)
-                    for grandchild in child.children.filter(is_active=True):
-                        cat_ids.append(grandchild.id)
-                qs = qs.filter(category_id__in=cat_ids)
-            except Category.DoesNotExist:
-                pass
+            qs = self._filter_by_category(qs, category_slug)
+            if qs is None:
+                return Product.objects.none()
 
         # Search
         search = self.request.query_params.get('search')
@@ -76,42 +85,81 @@ class StorefrontProductListView(generics.ListAPIView):
         # Price range
         min_price = self.request.query_params.get('min_price')
         if min_price:
-            qs = qs.filter(price__gte=min_price)
+            try:
+                qs = qs.filter(price__gte=float(min_price))
+            except ValueError:
+                pass
         max_price = self.request.query_params.get('max_price')
         if max_price:
-            qs = qs.filter(price__lte=max_price)
+            try:
+                qs = qs.filter(price__lte=float(max_price))
+            except ValueError:
+                pass
 
         # Featured
         featured = self.request.query_params.get('featured')
         if featured == 'true':
             qs = qs.filter(is_featured=True)
 
-        # Sort
+        return self._apply_sort(qs)
+
+    def _filter_by_category(self, qs, category_slug):
+        """Filter queryset by category slug, including child categories.
+
+        Returns the filtered queryset, or None if the category does not exist.
+        """
+        try:
+            cat = Category.objects.get(
+                store=self.request.tenant, slug=category_slug, is_active=True
+            )
+        except Category.DoesNotExist:
+            return None
+
+        cat_ids = [cat.id]
+        for child in cat.children.filter(is_active=True):
+            cat_ids.append(child.id)
+            for grandchild in child.children.filter(is_active=True):
+                cat_ids.append(grandchild.id)
+        return qs.filter(category_id__in=cat_ids)
+
+    def _apply_sort(self, qs):
+        """Apply sorting to the queryset based on the 'sort' query param."""
         sort = self.request.query_params.get('sort', 'newest')
         if sort == 'price_asc':
-            qs = qs.order_by('price')
-        elif sort == 'price_desc':
-            qs = qs.order_by('-price')
-        else:
-            qs = qs.order_by('-created_at')
-
-        return qs
+            return qs.order_by('price')
+        if sort == 'price_desc':
+            return qs.order_by('-price')
+        return qs.order_by('-created_at')
 
 
 class StorefrontProductDetailView(APIView):
     """GET /api/storefront/products/<slug>/ — full product detail."""
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def get(self, request, slug):
         if not request.tenant:
-            return Response({'error': 'Store not found'}, status=404)
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         try:
             product = Product.objects.select_related('category').prefetch_related(
                 'media__attribute_value__attribute',
                 'selected_attributes__attribute__values',
                 'variants__attribute_values__attribute_value__attribute',
+            ).annotate(
+                _variant_stock=Coalesce(
+                    Sum('variants__stock', filter=Q(variants__is_active=True)),
+                    0
+                )
             ).get(store=request.tenant, slug=slug, is_active=True)
         except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=404)
+
+        # Hide out-of-stock products
+        is_out_of_stock = (
+            (product.product_type == 'single' and product.stock == 0)
+            or (product.product_type == 'catalog' and product._variant_stock == 0)
+        )
+        if is_out_of_stock:
             return Response({'error': 'Product not found'}, status=404)
 
         serializer = StorefrontProductSerializer(product, context={'request': request})
@@ -124,13 +172,19 @@ class StorefrontOrderCreateView(APIView):
 
     def post(self, request):
         if not request.tenant:
-            return Response({'error': 'Store not found'}, status=404)
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
 
         serializer = OrderCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
+
+        # If authenticated, use the user's info
+        if request.user.is_authenticated:
+            data['customer_email'] = request.user.email
+            if request.user.get_full_name().strip():
+                data['customer_name'] = request.user.get_full_name()
 
         # Validate all products belong to this store
         for item_data in data['items']:
@@ -171,10 +225,11 @@ class StorefrontOrderCreateView(APIView):
 class StorefrontReturnRequestView(APIView):
     """POST /api/storefront/orders/<order_id>/return/ — customer requests return."""
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request, order_id):
         if not request.tenant:
-            return Response({'error': 'Store not found'}, status=404)
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
 
         try:
             order = Order.objects.get(id=order_id, store=request.tenant)
@@ -195,3 +250,38 @@ class StorefrontReturnRequestView(APIView):
             'order_id': order.id,
             'status': order.status,
         })
+
+
+class StorefrontCustomerOrdersView(APIView):
+    """GET /api/storefront/customer/orders/ — list orders for logged-in customer."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.tenant:
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
+        orders = Order.objects.filter(
+            store=request.tenant,
+            customer_email__iexact=request.user.email
+        ).prefetch_related(
+            'items__product__media',
+            'items__variant__attribute_values',
+        ).order_by('-created_at')
+        serializer = OrderSerializer(orders, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class StorefrontCustomerOrderDetailView(APIView):
+    """GET /api/storefront/customer/orders/<id>/ — order detail for logged-in customer."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, order_id):
+        if not request.tenant:
+            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
+        try:
+            order = Order.objects.prefetch_related('items__product').get(
+                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+            )
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=404)
+        serializer = OrderSerializer(order, context={'request': request})
+        return Response(serializer.data)
