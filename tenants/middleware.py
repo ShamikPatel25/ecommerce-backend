@@ -58,7 +58,7 @@ class TenantMiddleware:
         if not store_id:
             return None
         try:
-            return Store.objects.filter(id=int(store_id), is_active=True).first()
+            return Store.objects.filter(id=store_id, is_active=True).first()
         except (ValueError, TypeError):
             logger.debug('Invalid X-Store-Id header')
             return None

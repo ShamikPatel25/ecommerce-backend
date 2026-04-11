@@ -5,12 +5,12 @@ from products.models import Category
 class Attribute(models.Model):
     """
     Attribute Definition (e.g., Size, Color, Material)
-    
+
     Examples:
     - Category: Clothes → Attribute: Size
     - Category: Clothes → Attribute: Color
     - Category: Electronics → Attribute: Storage
-    
+
     IMPORTANT: One attribute belongs to ONE category
     """
     store = models.ForeignKey(
@@ -45,12 +45,12 @@ class Attribute(models.Model):
 class AttributeValue(models.Model):
     """
     Attribute Values (e.g., Size: 30, 40, 42, 46)
-    
+
     Examples:
     - Attribute: Size → Values: 30, 40, 42, 46
     - Attribute: Color → Values: Red, Blue, Black
     - Attribute: Storage → Values: 128GB, 256GB, 512GB
-    
+
     WORKFLOW:
     1. Create Attribute: Clothes → Size
     2. Add Values: 30, 40, 42, 46 (one by one)

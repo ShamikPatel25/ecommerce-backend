@@ -5,7 +5,7 @@ from tenants.models import Store
 class Category(models.Model):
     """
     Nested Categories System (Up to 3 Levels)
-    
+
     Examples:
     Level 1: Electronics (parent=None)
     Level 2: Smartphones (parent=Electronics)
@@ -218,7 +218,7 @@ class ProductMedia(models.Model):
 class ProductAttribute(models.Model):
     """
     Link between Product and Attributes (Selected Attributes for Catalog)
-    
+
     Example:
     Product: T-Shirt (Catalog)
     Selected Attributes: Size, Color
@@ -247,7 +247,7 @@ class ProductAttribute(models.Model):
 class ProductVariant(models.Model):
     """
     Product Variants (Catalog Combinations)
-    
+
     Example:
     Product: T-Shirt
     Variant 1: Size=40, Color=Black
@@ -318,7 +318,7 @@ class ProductVariant(models.Model):
 class VariantAttributeValue(models.Model):
     """
     Links Variant to Attribute Values
-    
+
     Example:
     Variant: T-Shirt-40-Black
     ├── Size: 40

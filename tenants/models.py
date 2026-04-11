@@ -3,7 +3,6 @@ from django.conf import settings
 from django.core.validators import RegexValidator
 
 class Store(models.Model):
-    
     # Subdomain validator
     subdomain_validator = RegexValidator(
         regex=r'^[a-z0-9-]+$',
