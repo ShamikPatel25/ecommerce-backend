@@ -1,9 +1,10 @@
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Attribute, AttributeValue
+from products.models import ProductAttribute, VariantAttributeValue
 from .serializers import (
     AttributeSerializer,
     AttributeCreateSerializer,
@@ -91,6 +92,14 @@ class AttributeViewSet(viewsets.ModelViewSet):
                     to_create.append(AttributeValue(attribute=attribute, value=v))
             if to_create:
                 AttributeValue.objects.bulk_create(to_create)
+
+    def perform_destroy(self, instance):
+        usage_count = ProductAttribute.objects.filter(attribute=instance).count()
+        if usage_count > 0:
+            raise serializers.ValidationError(
+                {'detail': f'Cannot delete this attribute because it is used by {usage_count} product(s). Remove it from those products first.'}
+            )
+        instance.delete()
 
     @extend_schema(
         summary="Add single value to attribute",
@@ -212,6 +221,15 @@ class AttributeViewSet(viewsets.ModelViewSet):
                 attribute=attribute
             )
             value_name = value.value
+
+            # Check if this value is used by any product variant
+            usage_count = VariantAttributeValue.objects.filter(attribute_value=value).count()
+            if usage_count > 0:
+                return Response(
+                    {'detail': f'Cannot delete "{value_name}" because it is used by {usage_count} product variant(s). Remove it from those variants first.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             value.delete()
             
             return Response({

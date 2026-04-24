@@ -1,5 +1,5 @@
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -36,17 +36,25 @@ class CategoryViewSet(viewsets.ModelViewSet):
     """Category Management with Nested Support"""
     permission_classes = [IsAuthenticated]
     pagination_class = None
-    
+
     def get_serializer_class(self):
         if self.action == 'tree':
             return CategoryTreeSerializer
         return CategorySerializer
-    
+
     def get_queryset(self):
         return get_tenant_model(self.request, Category)
-    
+
     def perform_create(self, serializer):
         serializer.save(store=self.request.tenant)
+
+    def perform_destroy(self, instance):
+        product_count = instance.products.count()
+        if product_count > 0:
+            raise serializers.ValidationError(
+                {'detail': f'Cannot delete this category because it is used by {product_count} product(s). Remove or reassign them first.'}
+            )
+        instance.delete()
     
     @extend_schema(
         summary="Get category tree",
