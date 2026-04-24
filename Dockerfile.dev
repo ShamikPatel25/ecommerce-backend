@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies (cached layer)
+COPY requirements.txt /app/
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Source code will be mounted as a volume — not copied
+EXPOSE 8000
+
+# Run migrations and start Daphne with auto-reload
+CMD ["sh", "-c", "python manage.py migrate && watchfiles --filter python 'daphne -b 0.0.0.0 -p 8000 config.asgi:application'"]

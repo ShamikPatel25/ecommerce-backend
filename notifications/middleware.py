@@ -9,8 +9,7 @@ from urllib.parse import parse_qs
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-
-
+        
 @database_sync_to_async
 def get_user_from_token(token_str):
     try:
