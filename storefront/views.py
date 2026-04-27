@@ -1,3 +1,5 @@
+from functools import wraps
+
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -13,7 +15,19 @@ from orders.serializers import OrderCreateSerializer, OrderSerializer
 from orders.utils import decrement_stock
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
 
-_STORE_NOT_FOUND_MSG = 'Store not found'
+_STORE_NOT_FOUND = Response({'error': 'Store not found'}, status=404)
+
+
+def require_tenant(fn):
+    """Decorator that returns 404 when request.tenant is falsy."""
+    @wraps(fn)
+    def wrapper(self_or_request, *args, **kwargs):
+        # Works for both APIView methods (self, request, ...) and function views (request, ...)
+        request = args[0] if args and hasattr(args[0], 'tenant') else self_or_request
+        if not request.tenant:
+            return Response({'error': 'Store not found'}, status=404)
+        return fn(self_or_request, *args, **kwargs)
+    return wrapper
 
 
 class StorefrontStoreInfoView(APIView):
@@ -21,9 +35,8 @@ class StorefrontStoreInfoView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @require_tenant
     def get(self, request):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         serializer = StorefrontStoreSerializer(request.tenant)
         return Response(serializer.data)
 
@@ -33,14 +46,23 @@ class StorefrontCategoryListView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @require_tenant
     def get(self, request):
-        if not request.tenant:
-            return Response([], status=200)
         categories = Category.objects.filter(
             store=request.tenant, is_active=True, parent=None
         ).prefetch_related('children__children')
         serializer = CategoryTreeSerializer(categories, many=True)
         return Response(serializer.data)
+
+
+def _annotate_variant_stock(qs):
+    """Annotate a Product queryset with _variant_stock (total active-variant stock)."""
+    return qs.annotate(
+        _variant_stock=Coalesce(
+            Sum('variants__stock', filter=Q(variants__is_active=True)),
+            0
+        )
+    )
 
 
 class StorefrontProductListView(generics.ListAPIView):
@@ -57,14 +79,8 @@ class StorefrontProductListView(generics.ListAPIView):
             store=self.request.tenant, is_active=True
         ).select_related('category').prefetch_related('media', 'variants')
 
-        # Hide out-of-stock products:
-        # Single products with stock=0, catalog products where all variant stock=0
-        qs = qs.annotate(
-            _variant_stock=Coalesce(
-                Sum('variants__stock', filter=Q(variants__is_active=True)),
-                0
-            )
-        ).exclude(
+        # Hide out-of-stock products
+        qs = _annotate_variant_stock(qs).exclude(
             product_type='single', stock=0
         ).exclude(
             product_type='catalog', _variant_stock=0
@@ -137,18 +153,14 @@ class StorefrontProductDetailView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @require_tenant
     def get(self, request, slug):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         try:
-            product = Product.objects.select_related('category').prefetch_related(
-                'media__attribute_value__attribute',
-                'selected_attributes__attribute__values',
-                'variants__attribute_values__attribute_value__attribute',
-            ).annotate(
-                _variant_stock=Coalesce(
-                    Sum('variants__stock', filter=Q(variants__is_active=True)),
-                    0
+            product = _annotate_variant_stock(
+                Product.objects.select_related('category').prefetch_related(
+                    'media__attribute_value__attribute',
+                    'selected_attributes__attribute__values',
+                    'variants__attribute_values__attribute_value__attribute',
                 )
             ).get(store=request.tenant, slug=slug, is_active=True)
         except Product.DoesNotExist:
@@ -170,10 +182,8 @@ class StorefrontOrderCreateView(APIView):
     """POST /api/storefront/orders/ — guest checkout order creation."""
     permission_classes = [AllowAny]
 
+    @require_tenant
     def post(self, request):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
-
         serializer = OrderCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -227,10 +237,8 @@ class StorefrontReturnRequestView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @require_tenant
     def post(self, request, order_id):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
-
         try:
             order = Order.objects.get(id=order_id, store=request.tenant)
         except Order.DoesNotExist:
@@ -256,9 +264,8 @@ class StorefrontCustomerOrdersView(APIView):
     """GET /api/storefront/customer/orders/ — list orders for logged-in customer."""
     permission_classes = [IsAuthenticated]
 
+    @require_tenant
     def get(self, request):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         orders = Order.objects.filter(
             store=request.tenant,
             customer_email__iexact=request.user.email
@@ -274,9 +281,8 @@ class StorefrontCustomerOrderDetailView(APIView):
     """GET /api/storefront/customer/orders/<id>/ — order detail for logged-in customer."""
     permission_classes = [IsAuthenticated]
 
+    @require_tenant
     def get(self, request, order_id):
-        if not request.tenant:
-            return Response({'error': _STORE_NOT_FOUND_MSG}, status=404)
         try:
             order = Order.objects.prefetch_related('items__product').get(
                 id=order_id, store=request.tenant, customer_email__iexact=request.user.email

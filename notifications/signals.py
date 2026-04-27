@@ -1,5 +1,6 @@
 import logging
 
+from django.db import DatabaseError
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from channels.layers import get_channel_layer
@@ -118,7 +119,7 @@ def product_deleted_notification(sender, instance, **kwargs):
             data={'sku': instance.sku},
         )
         _push_to_websocket(notif)
-    except Exception:
+    except DatabaseError:
         logger.warning('Failed to create notification for product deletion: %s', instance.pk)
 
 
@@ -148,7 +149,7 @@ def category_deleted_notification(sender, instance, **kwargs):
             data={},
         )
         _push_to_websocket(notif)
-    except Exception:
+    except DatabaseError:
         logger.warning('Failed to create notification for category deletion: %s', instance.pk)
 
 
@@ -178,7 +179,7 @@ def attribute_deleted_notification(sender, instance, **kwargs):
             data={'category': instance.category.name},
         )
         _push_to_websocket(notif)
-    except Exception:
+    except DatabaseError:
         logger.warning('Failed to create notification for attribute deletion: %s', instance.pk)
 
 
