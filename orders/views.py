@@ -65,6 +65,13 @@ class OrderViewSet(viewsets.ModelViewSet):
                     customer_email=data.get('customer_email'),
                     customer_phone=data.get('customer_phone'),
                     notes=data.get('notes'),
+                    address_line_1=data.get('address_line_1', ''),
+                    address_line_2=data.get('address_line_2', ''),
+                    city=data.get('city', ''),
+                    state=data.get('state', ''),
+                    postal_code=data.get('postal_code', ''),
+                    country=data.get('country', 'India'),
+                    address_type=data.get('address_type', 'home'),
                 )
                 for item_data in data['items']:
                     # Decrement stock before creating the item

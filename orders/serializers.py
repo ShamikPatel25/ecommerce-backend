@@ -38,12 +38,15 @@ class OrderSerializer(serializers.ModelSerializer):
     items         = OrderItemSerializer(many=True, read_only=True)
     items_count   = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    shipping_address = serializers.CharField(read_only=True)
 
     class Meta:
         model  = Order
         fields = [
             'id', 'customer_name', 'customer_email', 'customer_phone',
             'status', 'status_display', 'total_amount', 'notes',
+            'address_line_1', 'address_line_2', 'city', 'state',
+            'postal_code', 'country', 'address_type', 'shipping_address',
             'items', 'items_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
@@ -67,6 +70,17 @@ class OrderCreateSerializer(serializers.Serializer):
     customer_phone = serializers.CharField(max_length=10, min_length=10)
     notes          = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     items          = OrderItemCreateSerializer(many=True)
+
+    # Shipping address
+    address_line_1 = serializers.CharField(max_length=255)
+    address_line_2 = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    city           = serializers.CharField(max_length=100)
+    state          = serializers.CharField(max_length=100)
+    postal_code    = serializers.CharField(max_length=20)
+    country        = serializers.CharField(max_length=100, required=False, default='India')
+    address_type   = serializers.ChoiceField(
+        choices=Order.ADDRESS_TYPE_CHOICES, required=False, default='home'
+    )
 
     def validate_customer_phone(self, value):
         if not re.match(r'^\d{10}$', value):

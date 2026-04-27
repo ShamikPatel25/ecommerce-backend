@@ -212,6 +212,13 @@ class StorefrontOrderCreateView(APIView):
                     customer_email=data['customer_email'],
                     customer_phone=data['customer_phone'],
                     notes=data.get('notes', ''),
+                    address_line_1=data['address_line_1'],
+                    address_line_2=data.get('address_line_2', ''),
+                    city=data['city'],
+                    state=data['state'],
+                    postal_code=data['postal_code'],
+                    country=data.get('country', 'India'),
+                    address_type=data.get('address_type', 'home'),
                 )
                 for item_data in data['items']:
                     decrement_stock(item_data)

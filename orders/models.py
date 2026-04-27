@@ -26,6 +26,12 @@ class Order(models.Model):
         'returned':         [],
     }
 
+    ADDRESS_TYPE_CHOICES = [
+        ('home',  'Home'),
+        ('work',  'Work'),
+        ('other', 'Other'),
+    ]
+
     store           = models.ForeignKey(
         'tenants.Store', on_delete=models.CASCADE, related_name='orders'
     )
@@ -35,6 +41,16 @@ class Order(models.Model):
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_amount    = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes           = models.TextField(blank=True, default='')
+
+    # Shipping address
+    address_line_1  = models.CharField(max_length=255, blank=True, default='')
+    address_line_2  = models.CharField(max_length=255, blank=True, default='')
+    city            = models.CharField(max_length=100, blank=True, default='')
+    state           = models.CharField(max_length=100, blank=True, default='')
+    postal_code     = models.CharField(max_length=20, blank=True, default='')
+    country         = models.CharField(max_length=100, blank=True, default='India')
+    address_type    = models.CharField(max_length=10, choices=ADDRESS_TYPE_CHOICES, default='home')
+
     created_at      = models.DateTimeField(auto_now_add=True)
     updated_at      = models.DateTimeField(auto_now=True)
 
@@ -43,6 +59,18 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.id} — {self.customer_name} ({self.status})"
+
+    @property
+    def shipping_address(self):
+        parts = [self.address_line_1]
+        if self.address_line_2:
+            parts.append(self.address_line_2)
+        if self.city or self.state or self.postal_code:
+            city_state = ', '.join(filter(None, [self.city, self.state, self.postal_code]))
+            parts.append(city_state)
+        if self.country:
+            parts.append(self.country)
+        return '\n'.join(parts) if self.address_line_1 else ''
 
     def recalculate_total(self):
         self.total_amount = sum(
