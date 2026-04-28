@@ -22,6 +22,7 @@ from .serializers import (
 )
 from attributes.models import Attribute, AttributeValue
 from tenants.utils import get_tenant_model
+from tenants.permissions import IsStoreOwner
 
 
 @extend_schema(tags=['Categories'])
@@ -34,8 +35,7 @@ from tenants.utils import get_tenant_model
 )
 class CategoryViewSet(viewsets.ModelViewSet):
     """Category Management with Nested Support"""
-    permission_classes = [IsAuthenticated]
-    pagination_class = None
+    permission_classes = [IsAuthenticated, IsStoreOwner]
 
     def get_serializer_class(self):
         if self.action == 'tree':
@@ -53,6 +53,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
         if product_count > 0:
             raise serializers.ValidationError(
                 {'detail': f'Cannot delete this category because it is used by {product_count} product(s). Remove or reassign them first.'}
+            )
+        # Check child categories for products too
+        child_product_count = Product.objects.filter(category__parent=instance).count()
+        if child_product_count > 0:
+            raise serializers.ValidationError(
+                {'detail': f'Cannot delete this category because its subcategories contain {child_product_count} product(s). Remove or reassign them first.'}
             )
         instance.delete()
     
@@ -89,8 +95,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 )
 class ProductViewSet(viewsets.ModelViewSet):
     """Complete Product Management with Catalog Generation"""
-    permission_classes = [IsAuthenticated]
-    pagination_class = None
+    permission_classes = [IsAuthenticated, IsStoreOwner]
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -234,7 +239,10 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         if attribute_value_id:
             try:
-                attribute_value_obj = AttributeValue.objects.get(id=attribute_value_id)
+                attribute_value_obj = AttributeValue.objects.get(
+                    id=attribute_value_id,
+                    attribute__store=product.store,
+                )
             except AttributeValue.DoesNotExist:
                 return None, False, Response(
                     {'error': 'Attribute value not found'},
@@ -592,8 +600,11 @@ class ProductViewSet(viewsets.ModelViewSet):
     
     def _create_variant(self, product, attribute_value_ids, price=None, stock=0):
         """Create a single variant. Returns (variant, created) — skips if duplicate SKU exists."""
-        # Validate attribute values
-        attr_values = AttributeValue.objects.filter(id__in=attribute_value_ids)
+        # Validate attribute values belong to this product's store
+        attr_values = AttributeValue.objects.filter(
+            id__in=attribute_value_ids,
+            attribute__store=product.store,
+        )
 
         if attr_values.count() != len(attribute_value_ids):
             raise ValueError('Some attribute values not found')
@@ -704,16 +715,22 @@ class ProductViewSet(viewsets.ModelViewSet):
         if physical_count < 0:
             return Response({'error': 'physical_count cannot be negative'}, status=status.HTTP_400_BAD_REQUEST)
 
-        should_be_on_shelf = product.stock + product.reserved
-        difference = physical_count - should_be_on_shelf
+        with transaction.atomic():
+            product = Product.objects.select_for_update().get(pk=product.pk)
+            should_be_on_shelf = product.stock + product.reserved
+            difference = physical_count - should_be_on_shelf
 
-        if difference == 0:
-            return Response({'message': 'No adjustment needed, stock matches physical count'})
+            if difference == 0:
+                return Response({'message': 'No adjustment needed, stock matches physical count'})
 
-        Product.objects.filter(pk=product.pk).update(
-            stock=models.F('stock') + difference
-        )
-        product.refresh_from_db()
+            product.stock = product.stock + difference
+            if product.stock < 0:
+                return Response(
+                    {'error': f'Adjustment would result in negative stock ({product.stock}). '
+                              f'There are {product.reserved} reserved units.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            product.save(update_fields=['stock'])
 
         return Response({
             'message': f'Stock adjusted by {"+"+str(difference) if difference > 0 else str(difference)}',

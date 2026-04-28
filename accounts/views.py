@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema
+import logging
 from rest_framework import status, generics
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -19,6 +20,7 @@ from .serializers import (
 from .models import CustomerAddress
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def _generate_tokens(user, request):
@@ -26,8 +28,12 @@ def _generate_tokens(user, request):
     refresh = RefreshToken.for_user(user)
     if request.headers.get('X-Tenant'):
         refresh.set_exp(lifetime=settings.STOREFRONT_REFRESH_TOKEN_LIFETIME)
-        refresh.access_token.set_exp(lifetime=settings.STOREFRONT_ACCESS_TOKEN_LIFETIME)
-    return refresh
+        # access_token is a property that creates a new instance each time,
+        # so we must capture it, set_exp, and return it separately.
+        access = refresh.access_token
+        access.set_exp(lifetime=settings.STOREFRONT_ACCESS_TOKEN_LIFETIME)
+        return refresh, str(access)
+    return refresh, str(refresh.access_token)
 
 @extend_schema(tags=['Authentication'])
 class RegisterView(generics.CreateAPIView):
@@ -66,13 +72,13 @@ class RegisterView(generics.CreateAPIView):
         user = serializer.save()
 
         # Generate JWT tokens
-        refresh = _generate_tokens(user, request)
+        refresh, access_token = _generate_tokens(user, request)
 
         return Response({
             'user': UserSerializer(user).data,
             'tokens': {
                 'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'access': access_token,
             },
             'message': 'User registered successfully'
         }, status=status.HTTP_201_CREATED)
@@ -132,13 +138,13 @@ def login_view(request):
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     # Generate tokens
-    refresh = _generate_tokens(user, request)
-    
+    refresh, access_token = _generate_tokens(user, request)
+
     return Response({
         'user': UserSerializer(user).data,
         'tokens': {
             'refresh': str(refresh),
-            'access': str(refresh.access_token),
+            'access': access_token,
         },
         'message': 'Login successful'
     })
@@ -207,13 +213,22 @@ def forgot_password_view(request):
         user = User.objects.get(email=email)
     except User.DoesNotExist:
         # Security: don't reveal email doesn't exist — show fake "sent" message
-        return Response({'found': False, 'message': "We've sent a password reset link to the given email."})
+        return Response({'message': "If an account with that email exists, we've sent a password reset link."})
 
-    # Email exists — generate token and return it directly
+    # Generate token and build reset URL
     token = default_token_generator.make_token(user)
     uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-    return Response({'found': True, 'uid': uid, 'token': token})
+    # In production, send this via email. For now, log and return the link
+    # so the frontend can use it (the token is NOT returned to the client).
+    from django.conf import settings as conf_settings
+    frontend_url = getattr(conf_settings, 'FRONTEND_URL', 'http://localhost:3000')
+    reset_url = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+
+    # Log reset link (email integration pending)
+    logger.info('Password reset requested for %s — link: %s', email, reset_url)
+
+    return Response({'message': "If an account with that email exists, we've sent a password reset link."})
 
 
 @extend_schema(

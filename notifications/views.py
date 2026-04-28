@@ -7,20 +7,20 @@ from rest_framework.response import Response
 from .models import Notification
 from .serializers import NotificationSerializer
 from tenants.utils import get_tenant_model
+from tenants.permissions import IsStoreOwner
 
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStoreOwner]
     serializer_class = NotificationSerializer
-    pagination_class = None
 
     def get_queryset(self):
         return get_tenant_model(self.request, Notification).order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
-        """Return all unread + latest 10 read notifications."""
+        """Return up to 50 unread + latest 10 read notifications."""
         qs = self.get_queryset()
-        unread = list(qs.filter(is_read=False))
+        unread = list(qs.filter(is_read=False)[:50])
         read = list(qs.filter(is_read=True)[:10])
         serializer = self.get_serializer(list(chain(unread, read)), many=True)
         return Response(serializer.data)

@@ -13,6 +13,7 @@ from .serializers import (
     BulkAttributeValueSerializer
 )
 from tenants.utils import get_tenant_model
+from tenants.permissions import IsStoreOwner
 
 @extend_schema(tags=['Attributes'])
 @extend_schema_view(
@@ -51,7 +52,7 @@ class AttributeViewSet(viewsets.ModelViewSet):
     3. Or Bulk Add: POST /api/attributes/{id}/add_bulk_values/
        { "values": ["30", "40", "42", "46"] }
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStoreOwner]
     pagination_class = None
     
     def get_queryset(self):

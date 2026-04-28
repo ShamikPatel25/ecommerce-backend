@@ -1,6 +1,6 @@
 import logging
 
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from channels.layers import get_channel_layer
@@ -56,14 +56,22 @@ def cache_old_order_status(sender, instance, **kwargs):
 @receiver(post_save, sender=Order)
 def order_notification(sender, instance, created, **kwargs):
     if created:
-        notif = Notification.objects.create(
-            store=instance.store,
-            notification_type=Notification.NotificationType.ORDER_CREATED,
-            title='New Order',
-            message=f'Order #{instance.id} placed by {instance.customer_name}',
-            data={'order_id': instance.id, 'total': str(instance.total_amount)},
-        )
-        _push_to_websocket(notif)
+        # Defer notification creation to after transaction commits,
+        # so total_amount reflects the added items.
+        order_id = instance.id
+        store_id = instance.store_id
+        customer_name = instance.customer_name
+        def _create_order_notification():
+            order = Order.objects.get(pk=order_id)
+            notif = Notification.objects.create(
+                store_id=store_id,
+                notification_type=Notification.NotificationType.ORDER_CREATED,
+                title='New Order',
+                message=f'Order #{order_id} placed by {customer_name}',
+                data={'order_id': order_id, 'total': str(order.total_amount)},
+            )
+            _push_to_websocket(notif)
+        transaction.on_commit(_create_order_notification)
     else:
         old_status = getattr(instance, '_old_status', None)
         if old_status and old_status != instance.status:
@@ -74,7 +82,7 @@ def order_notification(sender, instance, created, **kwargs):
                 message=f'Order #{instance.id}: {old_status} → {instance.status}',
                 data={'order_id': instance.id, 'old_status': old_status, 'new_status': instance.status},
             )
-            _push_to_websocket(notif)
+            transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
 
 # ──────────────────────── PRODUCT ────────────────────────
@@ -89,7 +97,7 @@ def product_notification(sender, instance, created, **kwargs):
             message=f'New product "{instance.name}" added',
             data={'product_id': instance.id, 'sku': instance.sku},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
     else:
         # Guard: after F() expression updates, instance.stock may be a
         # CombinedExpression instead of an int. Refresh from DB first.
@@ -105,7 +113,7 @@ def product_notification(sender, instance, created, **kwargs):
                 message=f'"{instance.name}" has only {stock} units left',
                 data={'product_id': instance.id, 'stock': stock},
             )
-            _push_to_websocket(notif)
+            transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
 
 @receiver(post_delete, sender=Product)
@@ -118,7 +126,7 @@ def product_deleted_notification(sender, instance, **kwargs):
             message=f'Product "{instance.name}" was deleted',
             data={'sku': instance.sku},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
     except DatabaseError:
         logger.warning('Failed to create notification for product deletion: %s', instance.pk)
 
@@ -135,7 +143,7 @@ def category_notification(sender, instance, created, **kwargs):
             message=f'New category "{instance.name}" added',
             data={'category_id': instance.id},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
 
 @receiver(post_delete, sender=Category)
@@ -148,7 +156,7 @@ def category_deleted_notification(sender, instance, **kwargs):
             message=f'Category "{instance.name}" was deleted',
             data={},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
     except DatabaseError:
         logger.warning('Failed to create notification for category deletion: %s', instance.pk)
 
@@ -165,7 +173,7 @@ def attribute_notification(sender, instance, created, **kwargs):
             message=f'New attribute "{instance.name}" added to {instance.category.name}',
             data={'attribute_id': instance.id, 'category': instance.category.name},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
 
 @receiver(post_delete, sender=Attribute)
@@ -178,7 +186,7 @@ def attribute_deleted_notification(sender, instance, **kwargs):
             message=f'Attribute "{instance.name}" was deleted',
             data={'category': instance.category.name},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))
     except DatabaseError:
         logger.warning('Failed to create notification for attribute deletion: %s', instance.pk)
 
@@ -195,4 +203,4 @@ def store_notification(sender, instance, created, **kwargs):
             message=f'Store "{instance.name}" is now live',
             data={'store_id': instance.id, 'subdomain': instance.subdomain},
         )
-        _push_to_websocket(notif)
+        transaction.on_commit(lambda n=notif: _push_to_websocket(n))

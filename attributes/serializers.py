@@ -64,6 +64,17 @@ class AttributeCreateSerializer(serializers.ModelSerializer):
         fields = ['id', 'category', 'name']
         read_only_fields = ['id']
 
+    def validate(self, data):
+        """Ensure category belongs to same store"""
+        request = self.context.get('request')
+        category = data.get('category')
+        if category and request and hasattr(request, 'tenant'):
+            if category.store_id != request.tenant.id:
+                raise serializers.ValidationError({
+                    'category': 'Category does not belong to your store.'
+                })
+        return data
+
 
 class AttributeValueCreateSerializer(serializers.ModelSerializer):
     """

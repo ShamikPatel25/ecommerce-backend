@@ -18,6 +18,7 @@ from .serializers import (
 )
 from .utils import decrement_stock, restore_stock, reduce_reserved, restore_stock_only
 from tenants.utils import get_tenant_model
+from tenants.permissions import IsStoreOwner
 
 
 @extend_schema(tags=['Orders'])
@@ -28,8 +29,7 @@ from tenants.utils import get_tenant_model
 )
 class OrderViewSet(viewsets.ModelViewSet):
     """Order management — list, retrieve, create, update status, delete."""
-    permission_classes = [IsAuthenticated]
-    pagination_class = None
+    permission_classes = [IsAuthenticated, IsStoreOwner]
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):
@@ -57,6 +57,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
+
+        # Validate all products belong to this store
+        for item_data in data['items']:
+            if item_data['product'].store_id != request.tenant.id:
+                return Response(
+                    {'error': 'Product does not belong to this store'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         try:
             with transaction.atomic():
                 order = Order.objects.create(
@@ -64,7 +73,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     customer_name=data['customer_name'],
                     customer_email=data.get('customer_email'),
                     customer_phone=data.get('customer_phone'),
-                    notes=data.get('notes'),
+                    notes=data.get('notes', ''),
                     address_line_1=data.get('address_line_1', ''),
                     address_line_2=data.get('address_line_2', ''),
                     city=data.get('city', ''),
@@ -99,24 +108,29 @@ class OrderViewSet(viewsets.ModelViewSet):
     @extend_schema(summary='Update order status', request=OrderStatusUpdateSerializer)
     @action(detail=True, methods=['patch'], url_path='status')
     def update_status(self, request, pk=None):
-        order = self.get_object()
         serializer = OrderStatusUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         new_status = serializer.validated_data['status']
-        old_status = order.status
-
-        # Validate status transition
-        valid_next = Order.VALID_TRANSITIONS.get(old_status, [])
-        if new_status not in valid_next:
-            return Response(
-                {'error': f'Cannot change status from "{old_status}" to "{new_status}". '
-                          f'Allowed: {", ".join(valid_next) if valid_next else "none (final status)"}'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         with transaction.atomic():
+            # Lock the order row to prevent concurrent status changes
+            try:
+                order = Order.objects.select_for_update().get(pk=pk, store=request.tenant)
+            except Order.DoesNotExist:
+                return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+            old_status = order.status
+
+            # Validate status transition
+            valid_next = Order.VALID_TRANSITIONS.get(old_status, [])
+            if new_status not in valid_next:
+                return Response(
+                    {'error': f'Cannot change status from "{old_status}" to "{new_status}". '
+                              f'Allowed: {", ".join(valid_next) if valid_next else "none (final status)"}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             # Cancel (before shipping) → stock +1, reserved -1
             if new_status == 'cancelled':
                 restore_stock(order)
@@ -171,7 +185,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         if email:
             orders = base_qs.filter(customer_email=email)
         else:
-            orders = base_qs.filter(customer_name=name, customer_email__isnull=True)
+            orders = base_qs.filter(customer_name__icontains=name)
 
         orders = orders.prefetch_related('items__product', 'items__variant__attribute_values')
         return Response(OrderSerializer(orders, many=True, context={'request': request}).data)

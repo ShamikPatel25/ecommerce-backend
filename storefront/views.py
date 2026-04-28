@@ -13,6 +13,7 @@ from products.serializers import StorefrontProductSerializer, CategoryTreeSerial
 from orders.models import Order, OrderItem
 from orders.serializers import OrderCreateSerializer, OrderSerializer
 from orders.utils import decrement_stock
+from storefront.authentication import OptionalJWTAuthentication
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
 
 _STORE_NOT_FOUND = Response({'error': 'Store not found'}, status=404)
@@ -181,6 +182,7 @@ class StorefrontProductDetailView(APIView):
 class StorefrontOrderCreateView(APIView):
     """POST /api/storefront/orders/ — guest checkout order creation."""
     permission_classes = [AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     @require_tenant
     def post(self, request):
@@ -196,13 +198,20 @@ class StorefrontOrderCreateView(APIView):
             if request.user.get_full_name().strip():
                 data['customer_name'] = request.user.get_full_name()
 
-        # Validate all products belong to this store
+        # Validate all products belong to this store and enforce server-side pricing
         for item_data in data['items']:
-            if item_data['product'].store_id != request.tenant.id:
+            product = item_data['product']
+            variant = item_data.get('variant')
+            if product.store_id != request.tenant.id:
                 return Response(
                     {'error': 'Product does not belong to this store'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            # Enforce the real price — never trust client-submitted unit_price
+            if variant and variant.price is not None:
+                item_data['unit_price'] = variant.price
+            else:
+                item_data['unit_price'] = product.price
 
         try:
             with transaction.atomic():
@@ -241,13 +250,16 @@ class StorefrontOrderCreateView(APIView):
 
 class StorefrontReturnRequestView(APIView):
     """POST /api/storefront/orders/<order_id>/return/ — customer requests return."""
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
 
     @require_tenant
     def post(self, request, order_id):
         try:
-            order = Order.objects.get(id=order_id, store=request.tenant)
+            order = Order.objects.get(
+                id=order_id,
+                store=request.tenant,
+                customer_email__iexact=request.user.email,
+            )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
 

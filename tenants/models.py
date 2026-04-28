@@ -38,12 +38,12 @@ class Store(models.Model):
     
     currency = models.CharField(
         max_length=3,
-        default='USD',
+        default='INR',
         choices=[
+            ('INR', 'Indian Rupee'),
             ('USD', 'US Dollar'),
             ('EUR', 'Euro'),
             ('GBP', 'British Pound'),
-            ('INR', 'Indian Rupee'),
         ]
     )
     

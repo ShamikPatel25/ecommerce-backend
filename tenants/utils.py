@@ -24,3 +24,17 @@ def get_tenant_model(request, model_class):
         return model_class.objects.none()
 
     return model_class.objects.filter(store=request.tenant)
+
+
+def verify_store_owner(request):
+    """
+    Verify the authenticated user owns the current tenant store.
+
+    Returns True if ownership is confirmed, False otherwise.
+    Should be called in admin viewsets before mutating data.
+    """
+    if not hasattr(request, 'tenant') or request.tenant is None:
+        return False
+    if not request.user or not request.user.is_authenticated:
+        return False
+    return request.tenant.owner_id == request.user.id

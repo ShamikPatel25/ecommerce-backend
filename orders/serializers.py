@@ -61,7 +61,15 @@ class OrderItemCreateSerializer(serializers.Serializer):
         queryset=ProductVariant.objects.all(), required=False, allow_null=True, default=None
     )
     quantity   = serializers.IntegerField(min_value=1, default=1)
-    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+
+    def validate(self, data):
+        # Ensure variant belongs to the specified product
+        if data.get('variant') and data['variant'].product_id != data['product'].id:
+            raise serializers.ValidationError(
+                {'variant': 'This variant does not belong to the specified product.'}
+            )
+        return data
 
 
 class OrderCreateSerializer(serializers.Serializer):

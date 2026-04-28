@@ -92,9 +92,9 @@ class Product(models.Model):
     # Basic Info
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, blank=True)
-    sku = models.CharField(max_length=100, unique=True)
+    sku = models.CharField(max_length=100)
     description = models.TextField(blank=True, default='')
-    
+
     # Product Type
     product_type = models.CharField(
         max_length=10,
@@ -137,6 +137,9 @@ class Product(models.Model):
     class Meta:
         ordering = ['-created_at']
         unique_together = ['store', 'slug']
+        constraints = [
+            models.UniqueConstraint(fields=['store', 'sku'], name='unique_product_sku_per_store'),
+        ]
         indexes = [
             models.Index(fields=['store', 'is_active']),
             models.Index(fields=['sku']),
@@ -260,8 +263,8 @@ class ProductVariant(models.Model):
         related_name='variants'
     )
     
-    # Unique SKU for this variant
-    sku = models.CharField(max_length=100, unique=True)
+    # Unique SKU for this variant (unique within the parent product's store)
+    sku = models.CharField(max_length=100)
     
     # Pricing (can override product base price)
     price = models.DecimalField(
@@ -294,6 +297,9 @@ class ProductVariant(models.Model):
     
     class Meta:
         ordering = ['sku']
+        constraints = [
+            models.UniqueConstraint(fields=['product', 'sku'], name='unique_variant_sku_per_product'),
+        ]
         verbose_name = 'Product Variant'
         verbose_name_plural = 'Product Variants'
     

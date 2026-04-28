@@ -22,8 +22,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'password', 'password2', 
+        fields = ['id', 'email', 'username', 'password', 'password2',
                   'first_name', 'last_name', 'phone', 'is_store_owner']
+        read_only_fields = ['id', 'is_store_owner']
         extra_kwargs = {
             'first_name': {'required': False},
             'last_name': {'required': False},
@@ -53,7 +54,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             phone=validated_data.get('phone', ''),
-            is_store_owner=validated_data.get('is_store_owner', False)
         )
         
         return user

@@ -37,31 +37,32 @@ class CategorySerializer(serializers.ModelSerializer):
     def get_product_count(self, obj):
         return obj.products.filter(is_active=True).count()
     
-    def validate(self, data):
-        """Validate category level and uniqueness"""
-        parent = data.get('parent')
-        if parent and parent.level >= 2:
-            raise serializers.ValidationError({
-                'parent': 'Maximum 3 levels of categories allowed'
-            })
+    def _validate_uniqueness(self, data, store):
+        """Check duplicate name/slug within the same store."""
+        qs = Category.objects.filter(store=store)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        name = data.get('name', '')
+        if name and qs.filter(name__iexact=name).exists():
+            raise serializers.ValidationError({'name': 'A category with this name already exists.'})
+        slug = data.get('slug', '')
+        if slug and qs.filter(slug=slug).exists():
+            raise serializers.ValidationError({'slug': 'A category with this slug already exists.'})
 
-        # Check duplicate name/slug within same store
+    def validate(self, data):
+        """Validate category level, tenant isolation, and uniqueness"""
         request = self.context.get('request')
-        if request and hasattr(request, 'tenant'):
-            name = data.get('name', '')
-            slug = data.get('slug', '')
-            store = request.tenant
-            qs = Category.objects.filter(store=store)
-            if self.instance:
-                qs = qs.exclude(pk=self.instance.pk)
-            if name and qs.filter(name__iexact=name).exists():
-                raise serializers.ValidationError({
-                    'name': 'A category with this name already exists.'
-                })
-            if slug and qs.filter(slug=slug).exists():
-                raise serializers.ValidationError({
-                    'slug': 'A category with this slug already exists.'
-                })
+        parent = data.get('parent')
+        tenant = getattr(request, 'tenant', None) if request else None
+
+        if parent:
+            if parent.level >= 2:
+                raise serializers.ValidationError({'parent': 'Maximum 3 levels of categories allowed'})
+            if tenant and parent.store_id != tenant.id:
+                raise serializers.ValidationError({'parent': 'Parent category does not belong to your store.'})
+
+        if tenant:
+            self._validate_uniqueness(data, tenant)
 
         return data
 
@@ -168,9 +169,13 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']  
     
     def validate_sku(self, value):
-        """Ensure SKU is unique"""
+        """Ensure SKU is unique within the store"""
+        request = self.context.get('request')
         product_id = self.instance.id if self.instance else None
-        if Product.objects.filter(sku=value).exclude(id=product_id).exists():
+        qs = Product.objects.filter(sku=value)
+        if request and hasattr(request, 'tenant'):
+            qs = qs.filter(store=request.tenant)
+        if qs.exclude(id=product_id).exists():
             raise serializers.ValidationError('Product with this SKU already exists.')
         return value
     
@@ -181,10 +186,19 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """Prevent activating a product if its category is inactive"""
-        is_active = data.get('is_active')
+        """Prevent cross-tenant category and activating with inactive category"""
+        request = self.context.get('request')
         category = data.get('category', getattr(self.instance, 'category', None))
+
+        # Tenant isolation: category must belong to the same store
+        if category and request and hasattr(request, 'tenant'):
+            if category.store_id != request.tenant.id:
+                raise serializers.ValidationError({
+                    'category': 'Category does not belong to your store.'
+                })
+
         # When activating, check if category is active
+        is_active = data.get('is_active')
         if is_active and category and not category.is_active:
             raise serializers.ValidationError({
                 'is_active': f'Cannot activate product. Category "{category.name}" is inactive. Please activate the category first.'
