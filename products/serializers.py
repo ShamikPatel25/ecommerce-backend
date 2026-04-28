@@ -366,11 +366,25 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
                 attr, selected_attrs, matching_variants
             )
 
+            # For single-attribute products, include variant info directly
+            # since there are no "other" attributes to nest under
+            variant_info = None
+            if not other_attrs_data and matching_variants:
+                v = matching_variants[0]
+                variant_info = {
+                    'variant_id': v.id,
+                    'variant_sku': v.sku,
+                    'stock': v.stock,
+                    'price': str(v.final_price),
+                    'is_active': v.is_active,
+                }
+
             values_data.append({
                 'value_id': av.id,
                 'value': av.value,
                 'images': image_data,
                 'available_variants': other_attrs_data,
+                'variant': variant_info,
             })
         return values_data
 

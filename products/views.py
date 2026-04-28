@@ -398,9 +398,14 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check all attributes belong to product category
+        # Walk up to root category (attributes are defined at root level)
+        root_category = product.category
+        while root_category.parent_id:
+            root_category = Category.objects.get(id=root_category.parent_id)
+
+        # Check all attributes belong to product's root category
         for attr in attributes:
-            if attr.category != product.category:
+            if attr.category != root_category:
                 return Response(
                     {'error': f'Attribute "{attr.name}" does not belong to category "{product.category.name}"'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -657,11 +662,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Walk up to root category (attributes are defined at root level)
+        root_category = product.category
+        while root_category.parent_id:
+            root_category = Category.objects.get(id=root_category.parent_id)
+
         from attributes.serializers import AttributeSerializer
-        
-        # Get all attributes for this category
+
+        # Get all attributes for the root category
         attributes = Attribute.objects.filter(
-            category=product.category,
+            category=root_category,
             store=request.tenant
         ).prefetch_related('values')
         
