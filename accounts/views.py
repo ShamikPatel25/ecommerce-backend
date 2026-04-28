@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -13,9 +14,20 @@ from django.utils.encoding import force_bytes, force_str
 from .serializers import (
     UserRegistrationSerializer, UserSerializer, UserProfileUpdateSerializer,
     ChangePasswordSerializer, ForgotPasswordSerializer, ResetPasswordSerializer,
+    CustomerAddressSerializer,
 )
+from .models import CustomerAddress
 
 User = get_user_model()
+
+
+def _generate_tokens(user, request):
+    """Generate JWT tokens with lifetime based on whether request is from storefront or admin."""
+    refresh = RefreshToken.for_user(user)
+    if request.headers.get('X-Tenant'):
+        refresh.set_exp(lifetime=settings.STOREFRONT_REFRESH_TOKEN_LIFETIME)
+        refresh.access_token.set_exp(lifetime=settings.STOREFRONT_ACCESS_TOKEN_LIFETIME)
+    return refresh
 
 @extend_schema(tags=['Authentication'])
 class RegisterView(generics.CreateAPIView):
@@ -52,10 +64,10 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
+
         # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        
+        refresh = _generate_tokens(user, request)
+
         return Response({
             'user': UserSerializer(user).data,
             'tokens': {
@@ -120,7 +132,7 @@ def login_view(request):
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     # Generate tokens
-    refresh = RefreshToken.for_user(user)
+    refresh = _generate_tokens(user, request)
     
     return Response({
         'user': UserSerializer(user).data,
@@ -258,3 +270,36 @@ def reset_password_view(request):
     user.set_password(serializer.validated_data['new_password'])
     user.save()
     return Response({'message': 'Password has been reset successfully. You can now sign in.'})
+
+
+@extend_schema(tags=['Addresses'], summary="List or create addresses")
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def address_list_create_view(request):
+    if request.method == 'GET':
+        addresses = CustomerAddress.objects.filter(user=request.user)
+        return Response(CustomerAddressSerializer(addresses, many=True).data)
+
+    serializer = CustomerAddressSerializer(data=request.data, context={'request': request})
+    serializer.is_valid(raise_exception=True)
+    serializer.save(user=request.user)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=['Addresses'], summary="Update or delete an address")
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def address_detail_view(request, pk):
+    try:
+        address = CustomerAddress.objects.get(pk=pk, user=request.user)
+    except CustomerAddress.DoesNotExist:
+        return Response({'error': 'Address not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        address.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = CustomerAddressSerializer(address, data=request.data, partial=True, context={'request': request})
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)

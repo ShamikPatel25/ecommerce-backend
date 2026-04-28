@@ -167,14 +167,18 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-# JWT Settings
+# JWT Settings — Admin Panel defaults (10 min access, 1 day refresh)
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME', default=60, cast=int)),
-    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=config('JWT_REFRESH_TOKEN_LIFETIME', default=1440, cast=int)),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# Storefront (customer) token lifetimes (15 min access, 7 day refresh)
+STOREFRONT_ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
+STOREFRONT_REFRESH_TOKEN_LIFETIME = timedelta(days=7)
 
 # CORS Settings (for Next.js frontend)
 if DEBUG:
