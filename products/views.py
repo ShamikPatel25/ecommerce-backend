@@ -76,12 +76,37 @@ class CategoryViewSet(viewsets.ModelViewSet):
     @extend_schema(summary="Toggle category active status")
     @action(detail=True, methods=['post'])
     def toggle_active(self, request, pk=None):
-        """Toggle is_active and cascade to all products in this category"""
+        """Toggle is_active and cascade to subcategories, products, and variants"""
         category = self.get_object()
-        category.is_active = not category.is_active
+        new_status = not category.is_active
+
+        # Prevent activating if parent category is inactive
+        if new_status and category.parent and not category.parent.is_active:
+            return Response(
+                {'detail': f'Cannot activate. Parent category "{category.parent.name}" is inactive. Activate it first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        category.is_active = new_status
         category.save()
-        # Cascade: activate/deactivate all products in this category
-        category.products.update(is_active=category.is_active)
+
+        # Collect this category + all descendant categories
+        cat_ids = [category.id]
+        queue = [category.id]
+        while queue:
+            children = list(Category.objects.filter(parent_id__in=queue).values_list('id', flat=True))
+            cat_ids.extend(children)
+            queue = children
+
+        # Cascade to all descendant categories
+        Category.objects.filter(id__in=cat_ids).exclude(id=category.id).update(is_active=new_status)
+
+        # Cascade to all products in these categories
+        Product.objects.filter(category_id__in=cat_ids).update(is_active=new_status)
+
+        # Cascade to all variants of those products
+        ProductVariant.objects.filter(product__category_id__in=cat_ids).update(is_active=new_status)
+
         return Response(CategorySerializer(category).data)
 
 
@@ -150,9 +175,31 @@ class ProductViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
 
         return qs
-    
+
     def perform_create(self, serializer):
         serializer.save(store=self.request.tenant)
+
+    @extend_schema(summary="Toggle product active status")
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Toggle is_active and cascade to variants"""
+        product = self.get_object()
+        new_status = not product.is_active
+
+        # Prevent activating if category is inactive
+        if new_status and product.category and not product.category.is_active:
+            return Response(
+                {'detail': f'Cannot activate. Category "{product.category.name}" is inactive. Activate the category first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        product.is_active = new_status
+        product.save()
+
+        # Cascade to all variants
+        product.variants.update(is_active=new_status)
+
+        return Response(ProductSerializer(product, context={'request': request}).data)
 
     @extend_schema(
         summary="Check if SKU already exists",
