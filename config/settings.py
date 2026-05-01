@@ -269,6 +269,7 @@ PASSWORD_RESET_TIMEOUT = 3600
 
 # ── Security headers (production only) ────────────────────────────
 if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_SSL_REDIRECT = True
