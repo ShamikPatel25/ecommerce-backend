@@ -10,7 +10,6 @@ class Order(models.Model):
         ('shipped',          'Shipped'),
         ('delivered',        'Delivered'),
         ('cancelled',        'Cancelled'),
-        ('return_requested', 'Return Requested'),
         ('returned',         'Returned'),
     ]
 
@@ -20,8 +19,7 @@ class Order(models.Model):
         'confirmed':        ['processing', 'cancelled'],
         'processing':       ['shipped', 'cancelled'],
         'shipped':          ['delivered'],
-        'delivered':        ['return_requested'],
-        'return_requested': ['returned'],
+        'delivered':        ['returned'],
         'cancelled':        [],
         'returned':         [],
     }
@@ -85,6 +83,12 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
+    ITEM_STATUS_CHOICES = [
+        ('ordered',   'Ordered'),
+        ('cancelled', 'Cancelled'),
+        ('returned',  'Returned'),
+    ]
+
     order      = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product    = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, related_name='order_items')
     variant    = models.ForeignKey(
@@ -92,6 +96,7 @@ class OrderItem(models.Model):
     )
     quantity   = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    status     = models.CharField(max_length=20, choices=ITEM_STATUS_CHOICES, default='ordered')
 
     def __str__(self):
         return f"{self.quantity}× {self.product} (Order #{self.order_id})"

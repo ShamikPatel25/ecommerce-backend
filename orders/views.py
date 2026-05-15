@@ -10,6 +10,10 @@ from django.db.models import Count, Sum, Max
 
 logger = logging.getLogger(__name__)
 
+from datetime import timedelta
+from django.utils import timezone
+from django.db.models import Count, Sum, Max, F, ExpressionWrapper, DecimalField
+
 from .models import Order, OrderItem
 from .serializers import (
     OrderSerializer,
@@ -19,7 +23,7 @@ from .serializers import (
 from .utils import decrement_stock, restore_stock, reduce_reserved, restore_stock_only
 from tenants.utils import get_tenant_model
 from tenants.permissions import IsStoreOwner
-
+from products.models import Product, Category
 
 @extend_schema(tags=['Orders'])
 @extend_schema_view(
@@ -140,7 +144,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 reduce_reserved(order)
 
             # Returned (bottle back at store) → stock +1
-            if new_status == 'returned' and old_status == 'return_requested':
+            if new_status == 'returned' and old_status == 'delivered':
                 restore_stock_only(order)
 
             order.status = new_status
@@ -190,3 +194,84 @@ class OrderViewSet(viewsets.ModelViewSet):
         orders = orders.prefetch_related('items__product', 'items__variant__attribute_values')
         return Response(OrderSerializer(orders, many=True, context={'request': request}).data)
 
+    # ── Dashboard Stats ─────────────────────────────────────────────────────
+
+    @extend_schema(summary='Get dashboard statistics')
+    @action(detail=False, methods=['get'], url_path='dashboard-stats')
+    def dashboard_stats(self, request):
+        tenant = request.tenant
+
+        orders = get_tenant_model(request, Order)
+        # Exclude cancelled and returned orders from revenue calculation
+        valid_orders = orders.exclude(status__in=['cancelled', 'returned'])
+
+        total_revenue = valid_orders.aggregate(total=Sum('total_amount'))['total'] or 0
+        total_orders = orders.count()
+        total_products = Product.objects.filter(store=tenant).count()
+        total_categories = Category.objects.filter(store=tenant).count()
+        total_customers = orders.exclude(customer_email='').values('customer_email').distinct().count()
+        pending_orders = orders.filter(status='pending').count()
+
+        recent_orders_qs = orders.prefetch_related('items__product', 'items__variant__attribute_values').order_by('-created_at')[:5]
+        recent_orders = OrderSerializer(recent_orders_qs, many=True, context={'request': request}).data
+
+        # Low stock products (simple approach)
+        products_qs = Product.objects.filter(store=tenant, is_active=True).prefetch_related('variants')
+        low_stock_list = []
+        for p in products_qs:
+            stock = sum(v.stock for v in p.variants.all()) if p.product_type == 'catalog' else p.stock
+            if stock <= 10:
+                low_stock_list.append({
+                    'id': p.id,
+                    'name': p.name,
+                    'sku': p.sku,
+                    'product_type': p.product_type,
+                    'stock': stock
+                })
+        low_stock_list.sort(key=lambda x: x['stock'])
+        low_stock_list = low_stock_list[:5]
+
+        today = timezone.now().date()
+        revenue_by_day = []
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            day_orders = valid_orders.filter(created_at__date=day)
+            revenue_by_day.append({
+                'date': day.strftime('%b %d'),
+                'revenue': day_orders.aggregate(total=Sum('total_amount'))['total'] or 0,
+                'orders': day_orders.count()
+            })
+
+        status_counts = orders.values('status').annotate(count=Count('id'))
+        status_data = [{'name': item['status'], 'value': item['count']} for item in status_counts]
+
+        top_products_qs = OrderItem.objects.filter(
+            order__store=tenant
+        ).exclude(
+            order__status__in=['cancelled', 'returned']
+        ).values(
+            'product__name', 'product__sku'
+        ).annotate(
+            revenue=Sum(ExpressionWrapper(F('unit_price') * F('quantity'), output_field=DecimalField()))
+        ).order_by('-revenue')[:5]
+
+        top_products = [
+            {'name': item['product__name'], 'sku': item['product__sku'], 'revenue': item['revenue']}
+            for item in top_products_qs
+        ]
+
+        return Response({
+            'stats': {
+                'orders': total_orders,
+                'revenue': total_revenue,
+                'products': total_products,
+                'categories': total_categories,
+                'pending': pending_orders,
+                'customers': total_customers,
+            },
+            'recent_orders': recent_orders,
+            'low_stock_products': low_stock_list,
+            'revenue_by_day': revenue_by_day,
+            'status_data': status_data,
+            'top_products': top_products,
+        })

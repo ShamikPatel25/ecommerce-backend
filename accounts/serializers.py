@@ -36,6 +36,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Email must not contain spaces.")
         return value
 
+    def validate_username(self, value):
+        if not value.isalnum():
+            raise serializers.ValidationError("Username can only contain letters and numbers. Special characters like @, ., # are not allowed.")
+        return value
+
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({

@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
 
 from .serializers import (
     UserRegistrationSerializer, UserSerializer, UserProfileUpdateSerializer,
@@ -212,23 +213,23 @@ def forgot_password_view(request):
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:
-        # Security: don't reveal email doesn't exist — show fake "sent" message
         return Response({'message': "If an account with that email exists, we've sent a password reset link."})
+
+
 
     # Generate token and build reset URL
     token = default_token_generator.make_token(user)
     uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-    # In production, send this via email. For now, log and return the link
-    # so the frontend can use it (the token is NOT returned to the client).
-    from django.conf import settings as conf_settings
-    frontend_url = getattr(conf_settings, 'FRONTEND_URL', 'http://localhost:3000')
-    reset_url = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+    reset_url = f"/reset-password?uid={uid}&token={token}"
 
-    # Log reset link (email integration pending)
     logger.info('Password reset requested for %s — link: %s', email, reset_url)
 
-    return Response({'message': "If an account with that email exists, we've sent a password reset link."})
+    # Bypass email and return the reset_url directly for valid owners
+    return Response({
+        'redirect_url': reset_url,
+        'message': 'Valid owner email. Redirecting...'
+    })
 
 
 @extend_schema(

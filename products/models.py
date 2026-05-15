@@ -235,9 +235,7 @@ class ProductAttribute(models.Model):
         'attributes.Attribute',
         on_delete=models.CASCADE
     )
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         unique_together = ['product', 'attribute']
         verbose_name = 'Product Attribute'
@@ -339,9 +337,7 @@ class VariantAttributeValue(models.Model):
         'attributes.AttributeValue',
         on_delete=models.CASCADE
     )
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         unique_together = ['variant', 'attribute_value']
         verbose_name = 'Variant Attribute Value'

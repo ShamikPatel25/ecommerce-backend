@@ -248,35 +248,7 @@ class StorefrontOrderCreateView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class StorefrontReturnRequestView(APIView):
-    """POST /api/storefront/orders/<order_id>/return/ — customer requests return."""
-    permission_classes = [IsAuthenticated]
 
-    @require_tenant
-    def post(self, request, order_id):
-        try:
-            order = Order.objects.get(
-                id=order_id,
-                store=request.tenant,
-                customer_email__iexact=request.user.email,
-            )
-        except Order.DoesNotExist:
-            return Response({'error': 'Order not found'}, status=404)
-
-        if order.status != 'delivered':
-            return Response(
-                {'error': f'Cannot request return. Order status is "{order.status}", must be "delivered".'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        order.status = 'return_requested'
-        order.save(update_fields=['status', 'updated_at'])
-
-        return Response({
-            'message': 'Return request submitted successfully',
-            'order_id': order.id,
-            'status': order.status,
-        })
 
 
 class StorefrontCustomerOrdersView(APIView):
@@ -310,3 +282,83 @@ class StorefrontCustomerOrderDetailView(APIView):
             return Response({'error': 'Order not found'}, status=404)
         serializer = OrderSerializer(order, context={'request': request})
         return Response(serializer.data)
+
+
+class StorefrontCustomerOrderCancelView(APIView):
+    """POST /api/storefront/customer/orders/<id>/cancel/ — cancel an order."""
+    permission_classes = [IsAuthenticated]
+
+    @require_tenant
+    def post(self, request, order_id):
+        try:
+            order = Order.objects.get(
+                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+            )
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=404)
+        
+        if order.status in ['pending', 'confirmed', 'processing']:
+            order.status = 'cancelled'
+            order.save(update_fields=['status', 'updated_at'])
+            return Response({'message': 'Order cancelled successfully.'})
+        return Response({'error': 'Order cannot be cancelled at this stage.'}, status=400)
+
+
+class StorefrontCustomerOrderReturnView(APIView):
+    """POST /api/storefront/customer/orders/<id>/return/ — request a return."""
+    permission_classes = [IsAuthenticated]
+
+    @require_tenant
+    def post(self, request, order_id):
+        try:
+            order = Order.objects.get(
+                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+            )
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=404)
+        
+        if order.status == 'delivered':
+            order.status = 'returned'
+            order.save(update_fields=['status', 'updated_at'])
+            return Response({'message': 'Return requested successfully.'})
+        return Response({'error': 'Only delivered orders can be returned.'}, status=400)
+
+
+class StorefrontCustomerOrderItemCancelView(APIView):
+    """POST /api/storefront/customer/items/<item_id>/cancel/ — cancel an individual item."""
+    permission_classes = [IsAuthenticated]
+
+    @require_tenant
+    def post(self, request, item_id):
+        try:
+            item = OrderItem.objects.select_related('order').get(
+                id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
+            )
+        except OrderItem.DoesNotExist:
+            return Response({'error': 'Item not found'}, status=404)
+        
+        if item.order.status in ['pending', 'confirmed', 'processing'] and item.status == 'ordered':
+            item.status = 'cancelled'
+            item.save(update_fields=['status'])
+            return Response({'message': 'Item cancelled successfully.'})
+        return Response({'error': 'Item cannot be cancelled at this stage.'}, status=400)
+
+
+class StorefrontCustomerOrderItemReturnView(APIView):
+    """POST /api/storefront/customer/items/<item_id>/return/ — return an individual item."""
+    permission_classes = [IsAuthenticated]
+
+    @require_tenant
+    def post(self, request, item_id):
+        try:
+            item = OrderItem.objects.select_related('order').get(
+                id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
+            )
+        except OrderItem.DoesNotExist:
+            return Response({'error': 'Item not found'}, status=404)
+        
+        if item.order.status == 'delivered' and item.status == 'ordered':
+            item.status = 'returned'
+            item.save(update_fields=['status'])
+            return Response({'message': 'Item return requested successfully.'})
+        return Response({'error': 'Only delivered items can be returned.'}, status=400)
