@@ -207,8 +207,6 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         total_revenue = valid_orders.aggregate(total=Sum('total_amount'))['total'] or 0
         total_orders = orders.count()
-        total_products = Product.objects.filter(store=tenant).count()
-        total_categories = Category.objects.filter(store=tenant).count()
         total_customers = orders.exclude(customer_email='').values('customer_email').distinct().count()
         pending_orders = orders.filter(status='pending').count()
 
@@ -264,8 +262,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             'stats': {
                 'orders': total_orders,
                 'revenue': total_revenue,
-                'products': total_products,
-                'categories': total_categories,
                 'pending': pending_orders,
                 'customers': total_customers,
             },

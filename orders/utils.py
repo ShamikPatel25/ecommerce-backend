@@ -83,3 +83,31 @@ def restore_stock_only(order):
         variant_updates=lambda qty: {'stock': F('stock') + qty},
         product_updates=lambda qty: {'stock': F('stock') + qty},
     )
+
+
+def restore_item_stock(item):
+    """Single item cancelled (before shipping) — stock +1, reserved -1."""
+    qty = item.quantity
+    if item.variant:
+        ProductVariant.objects.filter(pk=item.variant_id).update(
+            stock=F('stock') + qty,
+            reserved=Greatest(F('reserved') - qty, Value(0)),
+        )
+    elif item.product:
+        Product.objects.filter(pk=item.product_id).update(
+            stock=F('stock') + qty,
+            reserved=Greatest(F('reserved') - qty, Value(0)),
+        )
+
+
+def restore_item_stock_only(item):
+    """Single item returned (after delivery) — stock +1, reserved already 0."""
+    qty = item.quantity
+    if item.variant:
+        ProductVariant.objects.filter(pk=item.variant_id).update(
+            stock=F('stock') + qty,
+        )
+    elif item.product:
+        Product.objects.filter(pk=item.product_id).update(
+            stock=F('stock') + qty,
+        )

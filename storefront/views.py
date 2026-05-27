@@ -12,7 +12,7 @@ from products.models import Product, Category
 from products.serializers import StorefrontProductSerializer, CategoryTreeSerializer
 from orders.models import Order, OrderItem
 from orders.serializers import OrderCreateSerializer, OrderSerializer
-from orders.utils import decrement_stock
+from orders.utils import decrement_stock, restore_stock, restore_stock_only, restore_item_stock, restore_item_stock_only
 from storefront.authentication import OptionalJWTAuthentication
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
 
@@ -167,14 +167,6 @@ class StorefrontProductDetailView(APIView):
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'}, status=404)
 
-        # Hide out-of-stock products
-        is_out_of_stock = (
-            (product.product_type == 'single' and product.stock == 0)
-            or (product.product_type == 'catalog' and product._variant_stock == 0)
-        )
-        if is_out_of_stock:
-            return Response({'error': 'Product not found'}, status=404)
-
         serializer = StorefrontProductSerializer(product, context={'request': request})
         return Response(serializer.data)
 
@@ -291,15 +283,17 @@ class StorefrontCustomerOrderCancelView(APIView):
     @require_tenant
     def post(self, request, order_id):
         try:
-            order = Order.objects.get(
+            order = Order.objects.prefetch_related('items__product', 'items__variant').get(
                 id=order_id, store=request.tenant, customer_email__iexact=request.user.email
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
-        
+
         if order.status in ['pending', 'confirmed', 'processing']:
-            order.status = 'cancelled'
-            order.save(update_fields=['status', 'updated_at'])
+            with transaction.atomic():
+                restore_stock(order)
+                order.status = 'cancelled'
+                order.save(update_fields=['status', 'updated_at'])
             return Response({'message': 'Order cancelled successfully.'})
         return Response({'error': 'Order cannot be cancelled at this stage.'}, status=400)
 
@@ -311,15 +305,17 @@ class StorefrontCustomerOrderReturnView(APIView):
     @require_tenant
     def post(self, request, order_id):
         try:
-            order = Order.objects.get(
+            order = Order.objects.prefetch_related('items__product', 'items__variant').get(
                 id=order_id, store=request.tenant, customer_email__iexact=request.user.email
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
-        
+
         if order.status == 'delivered':
-            order.status = 'returned'
-            order.save(update_fields=['status', 'updated_at'])
+            with transaction.atomic():
+                restore_stock_only(order)
+                order.status = 'returned'
+                order.save(update_fields=['status', 'updated_at'])
             return Response({'message': 'Return requested successfully.'})
         return Response({'error': 'Only delivered orders can be returned.'}, status=400)
 
@@ -331,15 +327,17 @@ class StorefrontCustomerOrderItemCancelView(APIView):
     @require_tenant
     def post(self, request, item_id):
         try:
-            item = OrderItem.objects.select_related('order').get(
+            item = OrderItem.objects.select_related('order', 'product', 'variant').get(
                 id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
             )
         except OrderItem.DoesNotExist:
             return Response({'error': 'Item not found'}, status=404)
-        
+
         if item.order.status in ['pending', 'confirmed', 'processing'] and item.status == 'ordered':
-            item.status = 'cancelled'
-            item.save(update_fields=['status'])
+            with transaction.atomic():
+                restore_item_stock(item)
+                item.status = 'cancelled'
+                item.save(update_fields=['status'])
             return Response({'message': 'Item cancelled successfully.'})
         return Response({'error': 'Item cannot be cancelled at this stage.'}, status=400)
 
@@ -351,14 +349,16 @@ class StorefrontCustomerOrderItemReturnView(APIView):
     @require_tenant
     def post(self, request, item_id):
         try:
-            item = OrderItem.objects.select_related('order').get(
+            item = OrderItem.objects.select_related('order', 'product', 'variant').get(
                 id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
             )
         except OrderItem.DoesNotExist:
             return Response({'error': 'Item not found'}, status=404)
-        
+
         if item.order.status == 'delivered' and item.status == 'ordered':
-            item.status = 'returned'
-            item.save(update_fields=['status'])
+            with transaction.atomic():
+                restore_item_stock_only(item)
+                item.status = 'returned'
+                item.save(update_fields=['status'])
             return Response({'message': 'Item return requested successfully.'})
         return Response({'error': 'Only delivered items can be returned.'}, status=400)

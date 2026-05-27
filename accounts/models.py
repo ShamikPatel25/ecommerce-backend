@@ -32,14 +32,8 @@ class User(AbstractUser):
 
 
 class CustomerAddress(models.Model):
-    ADDRESS_TYPE_CHOICES = [
-        ('home', 'Home'),
-        ('work', 'Work'),
-        ('other', 'Other'),
-    ]
-
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='addresses')
-    label = models.CharField(max_length=10, choices=ADDRESS_TYPE_CHOICES, default='home')
+    label = models.CharField(max_length=50, default='home')
     address_line_1 = models.CharField(max_length=255)
     address_line_2 = models.CharField(max_length=255, blank=True, default='')
     city = models.CharField(max_length=100)
@@ -57,7 +51,7 @@ class CustomerAddress(models.Model):
         ordering = ['-is_default', '-updated_at']
 
     def __str__(self):
-        return f"{self.user.email} - {self.get_label_display()}"
+        return f"{self.user.email} - {self.label}"
 
     def save(self, *args, **kwargs):
         if self.is_default:

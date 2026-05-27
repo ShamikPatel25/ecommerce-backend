@@ -22,13 +22,16 @@ class StorefrontProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, default=None)
     thumbnail = serializers.SerializerMethodField()
     total_stock = serializers.SerializerMethodField()
+    discount_percentage = serializers.DecimalField(
+        max_digits=5, decimal_places=2, read_only=True, default=0
+    )
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'price', 'compare_at_price',
             'product_type', 'is_featured', 'category_name', 'thumbnail',
-            'stock', 'total_stock',
+            'stock', 'total_stock', 'discount_percentage',
         ]
 
     def get_thumbnail(self, obj):

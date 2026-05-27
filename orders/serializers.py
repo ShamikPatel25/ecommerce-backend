@@ -37,22 +37,32 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     items         = OrderItemSerializer(many=True, read_only=True)
     items_count   = serializers.SerializerMethodField()
+    active_items_count = serializers.SerializerMethodField()
+    active_total  = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     shipping_address = serializers.CharField(read_only=True)
-
     class Meta:
         model  = Order
         fields = [
             'id', 'customer_name', 'customer_email', 'customer_phone',
-            'status', 'status_display', 'total_amount', 'notes',
+            'status', 'status_display', 'total_amount', 'active_total', 'notes',
             'address_line_1', 'address_line_2', 'city', 'state',
             'postal_code', 'country', 'address_type', 'shipping_address',
-            'items', 'items_count', 'created_at', 'updated_at',
+            'items', 'items_count', 'active_items_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
 
     def get_items_count(self, obj):
         return obj.items.count()
+
+    def get_active_items_count(self, obj):
+        return obj.items.exclude(status__in=['cancelled', 'returned']).count()
+
+    def get_active_total(self, obj):
+        from decimal import Decimal
+        active_items = obj.items.exclude(status__in=['cancelled', 'returned'])
+        total = sum(item.unit_price * item.quantity for item in active_items)
+        return Decimal(total).quantize(Decimal('0.01'))
 
 
 class OrderItemCreateSerializer(serializers.Serializer):
