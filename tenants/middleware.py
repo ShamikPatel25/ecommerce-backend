@@ -2,20 +2,12 @@ import logging
 
 from django.http import JsonResponse
 from .models import Store
+from config.constants import TENANT_EXEMPT_PATHS, LOCALHOST_HOSTS
 
 logger = logging.getLogger(__name__)
 
 
 class TenantMiddleware:
-
-    EXEMPT_PATHS = [
-        '/admin/',
-        '/api/auth/',
-        '/api/docs/',
-        '/api/schema/',
-        '/api/redoc/',
-        '/api/tenant/stores/',
-    ]
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -23,7 +15,7 @@ class TenantMiddleware:
     def __call__(self, request):
 
         # Skip tenant middleware for exempt paths
-        if any(request.path.startswith(path) for path in self.EXEMPT_PATHS):
+        if any(request.path.startswith(path) for path in TENANT_EXEMPT_PATHS):
             request.tenant = None
             return self.get_response(request)
 
@@ -66,7 +58,7 @@ class TenantMiddleware:
     def _resolve_from_host(self, request):
         host = request.get_host()
         subdomain = self.extract_subdomain(host)
-        if not subdomain or subdomain in ['localhost', '127.0.0.1']:
+        if not subdomain or subdomain in LOCALHOST_HOSTS:
             return None
         try:
             return Store.objects.get(subdomain=subdomain, is_active=True)
@@ -88,7 +80,7 @@ class TenantMiddleware:
         host = host.split(':')[0]
 
         # Handle localhost and IP addresses
-        if host in ['localhost', '127.0.0.1']:
+        if host in LOCALHOST_HOSTS:
             return host
 
         # Extract subdomain

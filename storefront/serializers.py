@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from tenants.models import Store
 from products.models import Product
+from products.utils import get_product_thumbnail_url
 
 
 class StorefrontStoreSerializer(serializers.ModelSerializer):
@@ -35,13 +36,7 @@ class StorefrontProductListSerializer(serializers.ModelSerializer):
         ]
 
     def get_thumbnail(self, obj):
-        # Prefer the image explicitly marked as thumbnail
-        thumb = obj.media.filter(media_type='image', is_thumbnail=True).first()
-        if not thumb:
-            thumb = obj.media.filter(media_type='image').first()
-        if thumb and thumb.file and hasattr(thumb.file, 'url'):
-            return thumb.file.url
-        return None
+        return get_product_thumbnail_url(obj)
 
     def get_total_stock(self, obj):
         """For catalog products, sum variant stock. For single products, use product stock."""

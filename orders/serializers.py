@@ -2,15 +2,15 @@ import re
 from rest_framework import serializers
 from .models import Order, OrderItem
 from products.models import Product, ProductVariant
+from products.utils import get_product_thumbnail_url
+from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_name  = serializers.CharField(source='product.name', read_only=True)
-    product_sku   = serializers.CharField(source='product.sku', read_only=True)
-    product_slug  = serializers.CharField(source='product.slug', read_only=True)
-    variant_attrs = serializers.CharField(
-        source='variant.attribute_values_display', read_only=True
-    )
+    product_name  = serializers.SerializerMethodField()
+    product_sku   = serializers.SerializerMethodField()
+    product_slug  = serializers.SerializerMethodField()
+    variant_attrs = serializers.SerializerMethodField()
     subtotal      = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     thumbnail     = serializers.SerializerMethodField()
 
@@ -23,15 +23,30 @@ class OrderItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
 
+    def get_product_name(self, obj):
+        if obj.product:
+            return obj.product.name
+        return obj.product_name_snapshot or None
+
+    def get_product_sku(self, obj):
+        if obj.product:
+            return obj.product.sku
+        return obj.product_sku_snapshot or None
+
+    def get_product_slug(self, obj):
+        if obj.product:
+            return obj.product.slug
+        return obj.product_slug_snapshot or None
+
+    def get_variant_attrs(self, obj):
+        if obj.variant and hasattr(obj.variant, 'attribute_values_display'):
+            return obj.variant.attribute_values_display
+        return obj.variant_attrs_snapshot or None
+
     def get_thumbnail(self, obj):
-        if not obj.product:
-            return None
-        thumb = obj.product.media.filter(media_type='image', is_thumbnail=True).first()
-        if not thumb:
-            thumb = obj.product.media.filter(media_type='image').first()
-        if thumb and thumb.file and hasattr(thumb.file, 'url'):
-            return thumb.file.url
-        return None
+        if obj.product:
+            return get_product_thumbnail_url(obj.product)
+        return obj.product_thumbnail_snapshot or None
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -95,9 +110,9 @@ class OrderCreateSerializer(serializers.Serializer):
     city           = serializers.CharField(max_length=100)
     state          = serializers.CharField(max_length=100)
     postal_code    = serializers.CharField(max_length=20)
-    country        = serializers.CharField(max_length=100, required=False, default='India')
+    country        = serializers.CharField(max_length=100, required=False, default=DEFAULT_COUNTRY)
     address_type   = serializers.ChoiceField(
-        choices=Order.ADDRESS_TYPE_CHOICES, required=False, default='home'
+        choices=Order.ADDRESS_TYPE_CHOICES, required=False, default=DEFAULT_ADDRESS_TYPE
     )
 
     def validate_customer_phone(self, value):

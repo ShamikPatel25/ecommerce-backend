@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Store
+from config.constants import RESERVED_SUBDOMAINS
 
 class StoreSerializer(serializers.ModelSerializer):
     """
@@ -20,8 +21,7 @@ class StoreSerializer(serializers.ModelSerializer):
         value = value.lower()
         
         # Check if subdomain is reserved
-        reserved = ['www', 'api', 'admin', 'app', 'mail', 'ftp']
-        if value in reserved:
+        if value in RESERVED_SUBDOMAINS:
             raise serializers.ValidationError(
                 f'Subdomain "{value}" is reserved. Please choose another.'
             )

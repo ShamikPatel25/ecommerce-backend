@@ -1,5 +1,6 @@
 from django.db import models
 from products.models import Product, ProductVariant
+from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 
 class Order(models.Model):
@@ -46,8 +47,8 @@ class Order(models.Model):
     city            = models.CharField(max_length=100, blank=True, default='')
     state           = models.CharField(max_length=100, blank=True, default='')
     postal_code     = models.CharField(max_length=20, blank=True, default='')
-    country         = models.CharField(max_length=100, blank=True, default='India')
-    address_type    = models.CharField(max_length=10, choices=ADDRESS_TYPE_CHOICES, default='home')
+    country         = models.CharField(max_length=100, blank=True, default=DEFAULT_COUNTRY)
+    address_type    = models.CharField(max_length=10, choices=ADDRESS_TYPE_CHOICES, default=DEFAULT_ADDRESS_TYPE)
 
     created_at      = models.DateTimeField(auto_now_add=True)
     updated_at      = models.DateTimeField(auto_now=True)
@@ -98,8 +99,16 @@ class OrderItem(models.Model):
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     status     = models.CharField(max_length=20, choices=ITEM_STATUS_CHOICES, default='ordered')
 
+    # Snapshot fields - preserve product info even if product is deleted
+    product_name_snapshot = models.CharField(max_length=255, blank=True, default='')
+    product_sku_snapshot = models.CharField(max_length=100, blank=True, default='')
+    product_slug_snapshot = models.CharField(max_length=255, blank=True, default='')
+    product_thumbnail_snapshot = models.URLField(max_length=500, blank=True, default='')
+    variant_attrs_snapshot = models.CharField(max_length=500, blank=True, default='')
+
     def __str__(self):
-        return f"{self.quantity}× {self.product} (Order #{self.order_id})"
+        name = self.product_name_snapshot or (self.product.name if self.product else 'Unknown')
+        return f"{self.quantity}× {name} (Order #{self.order_id})"
 
     @property
     def subtotal(self):

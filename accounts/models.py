@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from config.constants import DEFAULT_COUNTRY
 
 class User(AbstractUser):
     email = models.EmailField(
@@ -39,7 +40,7 @@ class CustomerAddress(models.Model):
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
     postal_code = models.CharField(max_length=20)
-    country = models.CharField(max_length=100, default='India')
+    country = models.CharField(max_length=100, default=DEFAULT_COUNTRY)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

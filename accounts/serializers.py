@@ -78,12 +78,18 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'phone', 'username']
+        fields = ['first_name', 'last_name', 'phone', 'username', 'email']
 
     def validate_username(self, value):
         user = self.context['request'].user
         if User.objects.filter(username=value).exclude(pk=user.pk).exists():
             raise serializers.ValidationError('This username is already taken.')
+        return value
+
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('This email is already in use.')
         return value
 
 

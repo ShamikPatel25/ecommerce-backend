@@ -8,6 +8,7 @@ from .models import Notification
 from .serializers import NotificationSerializer
 from tenants.utils import get_tenant_model
 from tenants.permissions import IsStoreOwner
+from config.constants import NOTIFICATION_UNREAD_LIMIT, NOTIFICATION_READ_LIMIT
 
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -18,10 +19,10 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         return get_tenant_model(self.request, Notification).order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
-        """Return up to 50 unread + latest 10 read notifications."""
+        """Return up to N unread + latest N read notifications."""
         qs = self.get_queryset()
-        unread = list(qs.filter(is_read=False)[:50])
-        read = list(qs.filter(is_read=True)[:10])
+        unread = list(qs.filter(is_read=False)[:NOTIFICATION_UNREAD_LIMIT])
+        read = list(qs.filter(is_read=True)[:NOTIFICATION_READ_LIMIT])
         serializer = self.get_serializer(list(chain(unread, read)), many=True)
         return Response(serializer.data)
 

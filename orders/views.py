@@ -6,13 +6,12 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Count, Sum, Max
 
 logger = logging.getLogger(__name__)
 
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Count, Sum, Max, F, ExpressionWrapper, DecimalField
+from django.db.models import Count, Sum, Max, F, ExpressionWrapper, DecimalField, Q
 
 from .models import Order, OrderItem
 from .serializers import (
@@ -23,7 +22,14 @@ from .serializers import (
 from .utils import decrement_stock, restore_stock, reduce_reserved, restore_stock_only
 from tenants.utils import get_tenant_model
 from tenants.permissions import IsStoreOwner
-from products.models import Product, Category
+from products.models import Product
+from products.utils import get_product_thumbnail_url
+from config.constants import (
+    LOW_STOCK_THRESHOLD,
+    DASHBOARD_RECENT_ORDERS_LIMIT,
+    DASHBOARD_LOW_STOCK_LIMIT,
+    DASHBOARD_DAYS_RANGE,
+)
 
 @extend_schema(tags=['Orders'])
 @extend_schema_view(
@@ -90,12 +96,26 @@ class OrderViewSet(viewsets.ModelViewSet):
                     # Decrement stock before creating the item
                     decrement_stock(item_data)
 
+                    product = item_data['product']
+                    variant = item_data.get('variant')
+
+                    # Get variant attributes display if variant exists
+                    variant_attrs = ''
+                    if variant and hasattr(variant, 'attribute_values_display'):
+                        variant_attrs = variant.attribute_values_display or ''
+
                     OrderItem.objects.create(
                         order=order,
-                        product=item_data['product'],
-                        variant=item_data.get('variant'),
+                        product=product,
+                        variant=variant,
                         quantity=item_data['quantity'],
                         unit_price=item_data['unit_price'],
+                        # Snapshot fields - preserve product info for order history
+                        product_name_snapshot=product.name,
+                        product_sku_snapshot=product.sku or '',
+                        product_slug_snapshot=product.slug or '',
+                        product_thumbnail_snapshot=get_product_thumbnail_url(product) or '',
+                        variant_attrs_snapshot=variant_attrs,
                     )
                 order.recalculate_total()
 
@@ -159,22 +179,63 @@ class OrderViewSet(viewsets.ModelViewSet):
     @extend_schema(summary='List unique customers with order stats')
     @action(detail=False, methods=['get'], url_path='customers')
     def customers(self, request):
+        from accounts.models import User
+
         base_qs = get_tenant_model(request, Order)
         search = request.query_params.get('search', '').strip()
-        if search:
-            base_qs = base_qs.filter(customer_name__icontains=search)
 
-        rows = (
+        # Get order stats grouped by email
+        order_stats = (
             base_qs
-            .values('customer_name', 'customer_email', 'customer_phone')
+            .exclude(customer_email='')
+            .exclude(customer_email__isnull=True)
+            .values('customer_email')
             .annotate(
                 total_orders=Count('id'),
                 total_spent=Sum('total_amount'),
                 last_order=Max('created_at'),
             )
-            .order_by('-last_order')
         )
-        return Response(list(rows))
+
+        # Build a map of email -> order stats
+        stats_map = {row['customer_email'].lower(): row for row in order_stats}
+
+        # Get profile data for these customers
+        customer_emails = list(stats_map.keys())
+        users = User.objects.filter(email__in=customer_emails)
+        user_map = {u.email.lower(): u for u in users}
+
+        # Build result with profile data + order stats
+        result = []
+        for email, stats in stats_map.items():
+            user = user_map.get(email)
+            if user:
+                # Use profile data for name and phone
+                customer_name = user.get_full_name() or email
+                customer_phone = user.phone or ''
+            else:
+                # Fallback to order data for guest orders
+                fallback = base_qs.filter(customer_email__iexact=email).order_by('-created_at').first()
+                customer_name = fallback.customer_name if fallback else email
+                customer_phone = fallback.customer_phone if fallback else ''
+
+            result.append({
+                'customer_name': customer_name,
+                'customer_email': email,
+                'customer_phone': customer_phone,
+                'total_orders': stats['total_orders'],
+                'total_spent': stats['total_spent'],
+                'last_order': stats['last_order'],
+            })
+
+        # Apply search filter
+        if search:
+            search_lower = search.lower()
+            result = [r for r in result if search_lower in r['customer_name'].lower() or search_lower in r['customer_email'].lower()]
+
+        # Sort by last order
+        result.sort(key=lambda x: x.get('last_order') or '', reverse=True)
+        return Response(result)
 
     @extend_schema(summary='Orders for a single customer (by email or name)')
     @action(detail=False, methods=['get'], url_path='customers/by-email')
@@ -210,7 +271,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         total_customers = orders.exclude(customer_email='').values('customer_email').distinct().count()
         pending_orders = orders.filter(status='pending').count()
 
-        recent_orders_qs = orders.prefetch_related('items__product', 'items__variant__attribute_values').order_by('-created_at')[:5]
+        recent_orders_qs = orders.prefetch_related('items__product', 'items__variant__attribute_values').order_by('-created_at')[:DASHBOARD_RECENT_ORDERS_LIMIT]
         recent_orders = OrderSerializer(recent_orders_qs, many=True, context={'request': request}).data
 
         # Low stock products (simple approach)
@@ -218,7 +279,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         low_stock_list = []
         for p in products_qs:
             stock = sum(v.stock for v in p.variants.all()) if p.product_type == 'catalog' else p.stock
-            if stock <= 10:
+            if stock <= LOW_STOCK_THRESHOLD:
                 low_stock_list.append({
                     'id': p.id,
                     'name': p.name,
@@ -227,11 +288,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'stock': stock
                 })
         low_stock_list.sort(key=lambda x: x['stock'])
-        low_stock_list = low_stock_list[:5]
+        low_stock_list = low_stock_list[:DASHBOARD_LOW_STOCK_LIMIT]
 
         today = timezone.now().date()
         revenue_by_day = []
-        for i in range(6, -1, -1):
+        for i in range(DASHBOARD_DAYS_RANGE - 1, -1, -1):
             day = today - timedelta(days=i)
             day_orders = valid_orders.filter(created_at__date=day)
             revenue_by_day.append({

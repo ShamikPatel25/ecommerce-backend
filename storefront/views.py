@@ -10,11 +10,13 @@ from django.db.models.functions import Coalesce
 
 from products.models import Product, Category
 from products.serializers import StorefrontProductSerializer, CategoryTreeSerializer
+from products.utils import get_product_thumbnail_url
 from orders.models import Order, OrderItem
 from orders.serializers import OrderCreateSerializer, OrderSerializer
 from orders.utils import decrement_stock, restore_stock, restore_stock_only, restore_item_stock, restore_item_stock_only
 from storefront.authentication import OptionalJWTAuthentication
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
+from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 _STORE_NOT_FOUND = Response({'error': 'Store not found'}, status=404)
 
@@ -184,11 +186,10 @@ class StorefrontOrderCreateView(APIView):
 
         data = serializer.validated_data
 
-        # If authenticated, use the user's info
+        # If authenticated, always use the user's email (cannot be changed at checkout)
+        # But keep the checkout-entered name and phone for this specific order
         if request.user.is_authenticated:
             data['customer_email'] = request.user.email
-            if request.user.get_full_name().strip():
-                data['customer_name'] = request.user.get_full_name()
 
         # Validate all products belong to this store and enforce server-side pricing
         for item_data in data['items']:
@@ -218,17 +219,32 @@ class StorefrontOrderCreateView(APIView):
                     city=data['city'],
                     state=data['state'],
                     postal_code=data['postal_code'],
-                    country=data.get('country', 'India'),
-                    address_type=data.get('address_type', 'home'),
+                    country=data.get('country', DEFAULT_COUNTRY),
+                    address_type=data.get('address_type', DEFAULT_ADDRESS_TYPE),
                 )
                 for item_data in data['items']:
                     decrement_stock(item_data)
+
+                    product = item_data['product']
+                    variant = item_data.get('variant')
+
+                    # Get variant attributes display if variant exists
+                    variant_attrs = ''
+                    if variant and hasattr(variant, 'attribute_values_display'):
+                        variant_attrs = variant.attribute_values_display or ''
+
                     OrderItem.objects.create(
                         order=order,
-                        product=item_data['product'],
-                        variant=item_data.get('variant'),
+                        product=product,
+                        variant=variant,
                         quantity=item_data['quantity'],
                         unit_price=item_data['unit_price'],
+                        # Snapshot fields - preserve product info for order history
+                        product_name_snapshot=product.name,
+                        product_sku_snapshot=product.sku or '',
+                        product_slug_snapshot=product.slug or '',
+                        product_thumbnail_snapshot=get_product_thumbnail_url(product) or '',
+                        variant_attrs_snapshot=variant_attrs,
                     )
                 order.recalculate_total()
 
