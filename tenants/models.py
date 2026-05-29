@@ -1,12 +1,15 @@
+import uuid
 from django.db import models
 from django.conf import settings
 from django.core.validators import RegexValidator
 
 class Store(models.Model):
-    # Subdomain validator
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Subdomain validator - allows lowercase letters, numbers, and underscores
     subdomain_validator = RegexValidator(
-        regex=r'^[a-z0-9-]+$',
-        message='Subdomain can only contain lowercase letters, numbers, and hyphens'
+        regex=r'^[a-z0-9_]+$',
+        message='Subdomain can only contain lowercase letters, numbers, and underscores'
     )
     
     name = models.CharField(

@@ -28,7 +28,7 @@ def _push_to_websocket(notification):
         {
             'type': 'send_notification',
             'data': {
-                'id': notification.id,
+                'id': str(notification.id),
                 'notification_type': notification.notification_type,
                 'title': notification.title,
                 'message': notification.message,
@@ -68,7 +68,7 @@ def order_notification(sender, instance, created, **kwargs):
                 notification_type=Notification.NotificationType.ORDER_CREATED,
                 title='New Order',
                 message=f'Order #{order_id} placed by {customer_name}',
-                data={'order_id': order_id, 'total': str(order.total_amount)},
+                data={'order_id': str(order_id), 'total': str(order.total_amount)},
             )
             _push_to_websocket(notif)
         transaction.on_commit(_create_order_notification)
@@ -80,7 +80,7 @@ def order_notification(sender, instance, created, **kwargs):
                 notification_type=Notification.NotificationType.ORDER_STATUS_CHANGED,
                 title='Order Status Updated',
                 message=f'Order #{instance.id}: {old_status} → {instance.status}',
-                data={'order_id': instance.id, 'old_status': old_status, 'new_status': instance.status},
+                data={'order_id': str(instance.id), 'old_status': old_status, 'new_status': instance.status},
             )
             transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
@@ -95,7 +95,7 @@ def product_notification(sender, instance, created, **kwargs):
             notification_type=Notification.NotificationType.PRODUCT_CREATED,
             title='Product Created',
             message=f'New product "{instance.name}" added',
-            data={'product_id': instance.id, 'sku': instance.sku},
+            data={'product_id': str(instance.id), 'sku': instance.sku},
         )
         transaction.on_commit(lambda n=notif: _push_to_websocket(n))
     else:
@@ -111,7 +111,7 @@ def product_notification(sender, instance, created, **kwargs):
                 notification_type=Notification.NotificationType.PRODUCT_LOW_STOCK,
                 title='Low Stock Alert',
                 message=f'"{instance.name}" has only {stock} units left',
-                data={'product_id': instance.id, 'stock': stock},
+                data={'product_id': str(instance.id), 'stock': stock},
             )
             transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
@@ -141,7 +141,7 @@ def category_notification(sender, instance, created, **kwargs):
             notification_type=Notification.NotificationType.CATEGORY_CREATED,
             title='Category Created',
             message=f'New category "{instance.name}" added',
-            data={'category_id': instance.id},
+            data={'category_id': str(instance.id)},
         )
         transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
@@ -171,7 +171,7 @@ def attribute_notification(sender, instance, created, **kwargs):
             notification_type=Notification.NotificationType.ATTRIBUTE_CREATED,
             title='Attribute Created',
             message=f'New attribute "{instance.name}" added to {instance.category.name}',
-            data={'attribute_id': instance.id, 'category': instance.category.name},
+            data={'attribute_id': str(instance.id), 'category': instance.category.name},
         )
         transaction.on_commit(lambda n=notif: _push_to_websocket(n))
 
@@ -201,6 +201,6 @@ def store_notification(sender, instance, created, **kwargs):
             notification_type=Notification.NotificationType.STORE_CREATED,
             title='Store Created',
             message=f'Store "{instance.name}" is now live',
-            data={'store_id': instance.id, 'subdomain': instance.subdomain},
+            data={'store_id': str(instance.id), 'subdomain': instance.subdomain},
         )
         transaction.on_commit(lambda n=notif: _push_to_websocket(n))

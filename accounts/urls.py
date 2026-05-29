@@ -13,7 +13,7 @@ urlpatterns = [
     path('profile/change-password/', views.change_password_view, name='change-password'),
 
     path('addresses/', views.address_list_create_view, name='address-list-create'),
-    path('addresses/<int:pk>/', views.address_detail_view, name='address-detail'),
+    path('addresses/<uuid:pk>/', views.address_detail_view, name='address-detail'),
 
     path('forgot-password/', views.forgot_password_view, name='forgot-password'),
     path('verify-reset-token/', views.verify_reset_token_view, name='verify-reset-token'),

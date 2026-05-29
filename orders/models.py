@@ -1,9 +1,11 @@
+import uuid
 from django.db import models
 from products.models import Product, ProductVariant
 from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 
 class Order(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     STATUS_CHOICES = [
         ('pending',          'Pending'),
         ('confirmed',        'Confirmed'),
@@ -84,6 +86,8 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     ITEM_STATUS_CHOICES = [
         ('ordered',   'Ordered'),
         ('cancelled', 'Cancelled'),

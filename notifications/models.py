@@ -1,8 +1,10 @@
+import uuid
 from django.db import models
 from tenants.models import Store
 
 
 class Notification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     class NotificationType(models.TextChoices):
         ORDER_CREATED = 'order_created', 'Order Created'
         ORDER_STATUS_CHANGED = 'order_status_changed', 'Order Status Changed'

@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.utils.text import slugify
 from tenants.models import Store
@@ -11,6 +12,7 @@ class Category(models.Model):
     Level 2: Smartphones (parent=Electronics)
     Level 3: Android (parent=Smartphones)
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     store = models.ForeignKey(
         Store,
         on_delete=models.CASCADE,
@@ -76,6 +78,7 @@ class Product(models.Model):
     """
     Enhanced Product Model with Catalog Support
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     store = models.ForeignKey(
         Store,
         on_delete=models.CASCADE,
@@ -169,6 +172,7 @@ class ProductMedia(models.Model):
     so that variant-specific images display when that color is selected.
     When attribute_value is null, the image is a general product image.
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     MEDIA_TYPE_CHOICES = [
         ('image', 'Image'),
         ('video', 'Video'),
@@ -226,6 +230,7 @@ class ProductAttribute(models.Model):
     Product: T-Shirt (Catalog)
     Selected Attributes: Size, Color
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -255,6 +260,7 @@ class ProductVariant(models.Model):
     Variant 2: Size=40, Color=Blue
     Variant 3: Size=42, Color=Black
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -328,6 +334,7 @@ class VariantAttributeValue(models.Model):
     ├── Size: 40
     └── Color: Black
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     variant = models.ForeignKey(
         ProductVariant,
         on_delete=models.CASCADE,

@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from tenants.models import Store
 from products.models import Category
@@ -13,6 +14,7 @@ class Attribute(models.Model):
 
     IMPORTANT: One attribute belongs to ONE category
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     store = models.ForeignKey(
         Store,
         on_delete=models.CASCADE,
@@ -57,6 +59,7 @@ class AttributeValue(models.Model):
     3. Create Another Attribute: Clothes → Color
     4. Add Values: Red, Blue, Black (one by one)
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     attribute = models.ForeignKey(
         Attribute,
         on_delete=models.CASCADE,
