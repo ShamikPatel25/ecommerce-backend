@@ -37,14 +37,20 @@ class CategorySerializer(serializers.ModelSerializer):
     def get_product_count(self, obj):
         return obj.products.filter(is_active=True).count()
     
-    def _validate_uniqueness(self, data, store):
-        """Check duplicate name/slug within the same store."""
+    def _validate_uniqueness(self, data, store, parent):
+        """Check duplicate name within same parent, slug must be unique store-wide."""
         qs = Category.objects.filter(store=store)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
+
+        # Name must be unique within the same parent level
         name = data.get('name', '')
-        if name and qs.filter(name__iexact=name).exists():
-            raise serializers.ValidationError({'name': 'A category with this name already exists.'})
+        if name:
+            name_qs = qs.filter(parent=parent, name__iexact=name)
+            if name_qs.exists():
+                raise serializers.ValidationError({'name': 'A category with this name already exists under the same parent.'})
+
+        # Slug must be unique store-wide (for URL routing)
         slug = data.get('slug', '')
         if slug and qs.filter(slug=slug).exists():
             raise serializers.ValidationError({'slug': 'A category with this slug already exists.'})
@@ -62,7 +68,7 @@ class CategorySerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'parent': 'Parent category does not belong to your store.'})
 
         if tenant:
-            self._validate_uniqueness(data, tenant)
+            self._validate_uniqueness(data, tenant, parent)
 
         return data
 
@@ -222,8 +228,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 class CombinationSerializer(serializers.Serializer):
     """A single attribute-value combination with optional per-variant price and stock."""
     attribute_values = serializers.ListField(
-        child=serializers.IntegerField(),
-        help_text='List of AttributeValue IDs for this variant'
+        child=serializers.UUIDField(),
+        help_text='List of AttributeValue IDs (UUIDs) for this variant'
     )
     price = serializers.DecimalField(
         max_digits=10, decimal_places=2,
