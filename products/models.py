@@ -5,12 +5,11 @@ from tenants.models import Store
 
 class Category(models.Model):
     """
-    Nested Categories System (Up to 3 Levels)
+    Nested Categories System (2 Levels Only)
 
     Examples:
-    Level 1: Electronics (parent=None)
-    Level 2: Smartphones (parent=Electronics)
-    Level 3: Android (parent=Smartphones)
+    Level 0: Electronics (parent=None) - Main Category
+    Level 1: Smartphones (parent=Electronics) - Subcategory
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     store = models.ForeignKey(
@@ -20,7 +19,8 @@ class Category(models.Model):
     )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=100)
-    
+    full_slug = models.CharField(max_length=300, blank=True, db_index=True)
+
     # Nested categories
     parent = models.ForeignKey(
         'self',
@@ -29,7 +29,7 @@ class Category(models.Model):
         blank=True,
         related_name='children'
     )
-    
+
     # Level tracking (auto-calculated)
     level = models.PositiveIntegerField(default=0, editable=False)
 
@@ -38,18 +38,20 @@ class Category(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name_plural = 'Categories'
         ordering = ['level', 'name']
-        unique_together = ['store', 'slug']
-    
+        unique_together = ['store', 'full_slug']
+
     def save(self, *args, **kwargs):
-        """Auto-calculate level based on parent"""
+        """Auto-calculate level and full_slug based on parent"""
         if self.parent:
             self.level = self.parent.level + 1
+            self.full_slug = f"{self.parent.full_slug}/{self.slug}"
         else:
             self.level = 0
+            self.full_slug = self.slug
         super().save(*args, **kwargs)
     
     def __str__(self):

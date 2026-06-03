@@ -11,7 +11,7 @@ class StoreSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Store
-        fields = ['id', 'name', 'subdomain', 'description', 'logo', 
+        fields = ['id', 'name', 'subdomain', 'description',
                   'currency', 'is_active', 'owner', 'owner_email',
                   'full_domain', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at', 'owner']

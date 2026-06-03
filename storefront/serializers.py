@@ -6,16 +6,10 @@ from products.utils import get_product_thumbnail_url
 
 class StorefrontStoreSerializer(serializers.ModelSerializer):
     """Public store info for storefront header/branding."""
-    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Store
-        fields = ['id', 'name', 'subdomain', 'description', 'logo_url', 'currency']
-
-    def get_logo_url(self, obj):
-        if obj.logo and hasattr(obj.logo, 'url'):
-            return obj.logo.url
-        return None
+        fields = ['id', 'name', 'subdomain', 'description', 'currency']
 
 
 class StorefrontProductListSerializer(serializers.ModelSerializer):

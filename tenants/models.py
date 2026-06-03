@@ -33,7 +33,6 @@ class Store(models.Model):
     
     # Store Settings
     description = models.TextField(blank=True)
-    logo = models.ImageField(upload_to='store_logos/', blank=True, null=True)
     is_active = models.BooleanField(
         default=True,
         help_text='Inactive stores are inaccessible to customers'

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from .models import CustomerAddress
+import re
 
 User = get_user_model()
 
@@ -24,7 +25,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'username', 'password', 'password2',
                   'first_name', 'last_name', 'phone', 'is_store_owner']
-        read_only_fields = ['id', 'is_store_owner']
+        read_only_fields = ['id']
         extra_kwargs = {
             'first_name': {'required': False},
             'last_name': {'required': False},
@@ -34,6 +35,25 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         if ' ' in value:
             raise serializers.ValidationError("Email must not contain spaces.")
+        if value != value.lower():
+            raise serializers.ValidationError("Email must be lowercase only.")
+
+        parts = value.split('@')
+        if len(parts) != 2:
+            raise serializers.ValidationError("Please enter a valid email address.")
+
+        local_part, domain = parts
+
+        # Local part: at least 2 chars
+        if len(local_part) < 2:
+            raise serializers.ValidationError("Minimum 2 characters required before @.")
+        if not re.match(r'^[a-z0-9][a-z0-9._-]*[a-z0-9]$', local_part) and not re.match(r'^[a-z0-9]{2}$', local_part):
+            raise serializers.ValidationError("Invalid characters in email.")
+
+        # Domain must be gmail.com only
+        if domain != 'gmail.com':
+            raise serializers.ValidationError("Only Gmail emails are allowed.")
+
         return value
 
     def validate_username(self, value):
@@ -50,8 +70,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Create user with hashed password"""
-        validated_data.pop('password2')  
-        
+        validated_data.pop('password2')
+
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
@@ -59,8 +79,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             phone=validated_data.get('phone', ''),
+            is_store_owner=validated_data.get('is_store_owner', False),
         )
-        
+
         return user
 
 

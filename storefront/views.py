@@ -123,14 +123,21 @@ class StorefrontProductListView(generics.ListAPIView):
         return self._apply_sort(qs)
 
     def _filter_by_category(self, qs, category_slug):
-        """Filter queryset by category slug, including child categories.
+        """Filter queryset by category slug or full_slug, including child categories.
 
         Returns the filtered queryset, or None if the category does not exist.
+        Supports both simple slug (e.g., 'phones') and path slug (e.g., 'electronics/phones').
         """
         try:
-            cat = Category.objects.get(
-                store=self.request.tenant, slug=category_slug, is_active=True
-            )
+            # First try full_slug (path-based), then fall back to simple slug
+            cat = Category.objects.filter(
+                store=self.request.tenant, is_active=True
+            ).filter(
+                Q(full_slug=category_slug) | Q(slug=category_slug)
+            ).first()
+
+            if not cat:
+                return None
         except Category.DoesNotExist:
             return None
 

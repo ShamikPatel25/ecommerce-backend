@@ -10,7 +10,7 @@ class StoreAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Info', {
-            'fields': ('name', 'subdomain', 'owner', 'description', 'logo')
+            'fields': ('name', 'subdomain', 'owner', 'description')
         }),
         ('Settings', {
             'fields': ('currency', 'is_active')

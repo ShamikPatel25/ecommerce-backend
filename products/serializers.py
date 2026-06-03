@@ -10,12 +10,12 @@ class CategoryTreeSerializer(serializers.ModelSerializer):
     """
     children = serializers.SerializerMethodField()
     full_path = serializers.CharField(read_only=True)
-    
+
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'is_active', 'children', 'created_at']
-        read_only_fields = ['id', 'level', 'created_at']
-    
+        fields = ['id', 'name', 'slug', 'full_slug', 'parent', 'level', 'full_path', 'is_active', 'children', 'created_at']
+        read_only_fields = ['id', 'level', 'full_slug', 'created_at']
+
     def get_children(self, obj):
         """Get child categories"""
         children = obj.children.all()
@@ -28,17 +28,17 @@ class CategorySerializer(serializers.ModelSerializer):
     """Simple Category Serializer"""
     full_path = serializers.CharField(read_only=True)
     product_count = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'parent', 'level', 'full_path', 'is_active', 'product_count', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'level', 'created_at', 'updated_at']
-    
+        fields = ['id', 'name', 'slug', 'full_slug', 'parent', 'level', 'full_path', 'is_active', 'product_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'level', 'full_slug', 'created_at', 'updated_at']
+
     def get_product_count(self, obj):
         return obj.products.filter(is_active=True).count()
-    
+
     def _validate_uniqueness(self, data, store, parent):
-        """Check duplicate name within same parent, slug must be unique store-wide."""
+        """Check duplicate name within same parent, full_slug must be unique store-wide."""
         qs = Category.objects.filter(store=store)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
@@ -50,10 +50,15 @@ class CategorySerializer(serializers.ModelSerializer):
             if name_qs.exists():
                 raise serializers.ValidationError({'name': 'A category with this name already exists under the same parent.'})
 
-        # Slug must be unique store-wide (for URL routing)
+        # Build full_slug and check uniqueness
         slug = data.get('slug', '')
-        if slug and qs.filter(slug=slug).exists():
-            raise serializers.ValidationError({'slug': 'A category with this slug already exists.'})
+        if slug:
+            if parent:
+                full_slug = f"{parent.full_slug}/{slug}"
+            else:
+                full_slug = slug
+            if qs.filter(full_slug=full_slug).exists():
+                raise serializers.ValidationError({'slug': 'A category with this slug already exists under this path.'})
 
     def validate(self, data):
         """Validate category level, tenant isolation, and uniqueness"""
@@ -62,8 +67,8 @@ class CategorySerializer(serializers.ModelSerializer):
         tenant = getattr(request, 'tenant', None) if request else None
 
         if parent:
-            if parent.level >= 2:
-                raise serializers.ValidationError({'parent': 'Maximum 3 levels of categories allowed'})
+            if parent.level >= 1:
+                raise serializers.ValidationError({'parent': 'Maximum 2 levels of categories allowed (Main + Subcategory)'})
             if tenant and parent.store_id != tenant.id:
                 raise serializers.ValidationError({'parent': 'Parent category does not belong to your store.'})
 
