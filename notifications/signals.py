@@ -67,7 +67,7 @@ def order_notification(sender, instance, created, **kwargs):
                 store_id=store_id,
                 notification_type=Notification.NotificationType.ORDER_CREATED,
                 title='New Order',
-                message=f'Order #{order_id} placed by {customer_name}',
+                message=f'Order {order.order_number} placed by {customer_name}',
                 data={'order_id': str(order_id), 'total': str(order.total_amount)},
             )
             _push_to_websocket(notif)
@@ -79,7 +79,7 @@ def order_notification(sender, instance, created, **kwargs):
                 store=instance.store,
                 notification_type=Notification.NotificationType.ORDER_STATUS_CHANGED,
                 title='Order Status Updated',
-                message=f'Order #{instance.id}: {old_status} → {instance.status}',
+                message=f'Order {instance.order_number}: {old_status} → {instance.status}',
                 data={'order_id': str(instance.id), 'old_status': old_status, 'new_status': instance.status},
             )
             transaction.on_commit(lambda n=notif: _push_to_websocket(n))

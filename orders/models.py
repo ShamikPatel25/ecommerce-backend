@@ -1,11 +1,20 @@
 import uuid
+import random
+import string
 from django.db import models
 from products.models import Product, ProductVariant
 from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 
+def generate_order_number():
+    chars = string.ascii_uppercase + string.digits
+    random_part = ''.join(random.choices(chars, k=6))
+    return f"ORD-{random_part}"
+
+
 class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order_number = models.CharField(max_length=20, unique=True, editable=False, default=generate_order_number)
     STATUS_CHOICES = [
         ('pending',          'Pending'),
         ('confirmed',        'Confirmed'),
@@ -56,15 +65,24 @@ class Order(models.Model):
     updated_at      = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-updated_at', '-created_at']
         indexes = [
             models.Index(fields=['store', 'status']),
             models.Index(fields=['store', 'customer_email']),
             models.Index(fields=['store', 'created_at']),
+            models.Index(fields=['store', 'updated_at']),
         ]
 
     def __str__(self):
-        return f"Order #{self.id} — {self.customer_name} ({self.status})"
+        return f"Order {self.order_number} — {self.customer_name} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.order_number:
+            for _ in range(10):
+                if not Order.objects.filter(order_number=self.order_number).exists():
+                    break
+                self.order_number = generate_order_number()
+        super().save(*args, **kwargs)
 
     @property
     def shipping_address(self):

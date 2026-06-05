@@ -59,13 +59,13 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Order
         fields = [
-            'id', 'customer_name', 'customer_email', 'customer_phone',
+            'id', 'order_number', 'customer_name', 'customer_email', 'customer_phone',
             'status', 'status_display', 'total_amount', 'active_total', 'notes',
             'address_line_1', 'address_line_2', 'city', 'state',
             'postal_code', 'country', 'address_type', 'shipping_address',
             'items', 'items_count', 'active_items_count', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'order_number', 'total_amount', 'created_at', 'updated_at']
 
     def get_items_count(self, obj):
         return obj.items.count()
@@ -100,7 +100,7 @@ class OrderItemCreateSerializer(serializers.Serializer):
 class OrderCreateSerializer(serializers.Serializer):
     customer_name  = serializers.CharField(max_length=255)
     customer_email = serializers.EmailField()
-    customer_phone = serializers.CharField(max_length=10, min_length=10)
+    customer_phone = serializers.CharField(max_length=15, min_length=10)
     notes          = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     items          = OrderItemCreateSerializer(many=True)
 
@@ -116,8 +116,8 @@ class OrderCreateSerializer(serializers.Serializer):
     )
 
     def validate_customer_phone(self, value):
-        if not re.match(r'^\d{10}$', value):
-            raise serializers.ValidationError('Phone must be exactly 10 digits.')
+        if not re.match(r'^\d{10,15}$', value):
+            raise serializers.ValidationError('Phone must be 10-15 digits.')
         return value
 
     def validate_items(self, value):

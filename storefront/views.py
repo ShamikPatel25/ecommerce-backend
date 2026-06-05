@@ -361,6 +361,12 @@ class StorefrontCustomerOrderItemCancelView(APIView):
                 restore_item_stock(item)
                 item.status = 'cancelled'
                 item.save(update_fields=['status'])
+                # Auto-update order status if all items are cancelled
+                order = item.order
+                active_items = order.items.exclude(status__in=['cancelled', 'returned']).count()
+                if active_items == 0:
+                    order.status = 'cancelled'
+                    order.save(update_fields=['status', 'updated_at'])
             return Response({'message': 'Item cancelled successfully.'})
         return Response({'error': 'Item cannot be cancelled at this stage.'}, status=400)
 
@@ -383,5 +389,11 @@ class StorefrontCustomerOrderItemReturnView(APIView):
                 restore_item_stock_only(item)
                 item.status = 'returned'
                 item.save(update_fields=['status'])
+                # Auto-update order status if all items are returned
+                order = item.order
+                active_items = order.items.exclude(status__in=['cancelled', 'returned']).count()
+                if active_items == 0:
+                    order.status = 'returned'
+                    order.save(update_fields=['status', 'updated_at'])
             return Response({'message': 'Item return requested successfully.'})
         return Response({'error': 'Only delivered items can be returned.'}, status=400)

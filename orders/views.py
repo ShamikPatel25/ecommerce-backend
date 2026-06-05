@@ -53,10 +53,41 @@ class OrderViewSet(viewsets.ModelViewSet):
         qs = get_tenant_model(self.request, Order).prefetch_related(
             'items__product', 'items__variant__attribute_values'
         )
+
+        # Annotate with active items count and returned items count for effective status filtering
+        qs = qs.annotate(
+            _active_items_count=Count(
+                'items',
+                filter=~Q(items__status__in=['cancelled', 'returned'])
+            ),
+            _has_returned_items=Count(
+                'items',
+                filter=Q(items__status='returned')
+            ),
+            _total_items=Count('items')
+        )
+
         status_filter = self.request.query_params.get('status')
         if status_filter:
-            qs = qs.filter(status=status_filter)
-        return qs
+            if status_filter == 'cancelled':
+                # Orders with status=cancelled OR all items inactive with no returned items
+                qs = qs.filter(
+                    Q(status='cancelled') |
+                    (Q(_active_items_count=0) & Q(_total_items__gt=0) & Q(_has_returned_items=0))
+                )
+            elif status_filter == 'returned':
+                # Orders with status=returned OR all items inactive with at least one returned
+                qs = qs.filter(
+                    Q(status='returned') |
+                    (Q(_active_items_count=0) & Q(_total_items__gt=0) & Q(_has_returned_items__gt=0))
+                )
+            else:
+                # Other statuses: filter by status AND exclude orders where all items are inactive
+                qs = qs.filter(status=status_filter).exclude(
+                    Q(_active_items_count=0) & Q(_total_items__gt=0)
+                )
+
+        return qs.order_by('-updated_at', '-created_at')
 
     # ── CRUD ──────────────────────────────────────────────────────────────
 
@@ -263,15 +294,22 @@ class OrderViewSet(viewsets.ModelViewSet):
         tenant = request.tenant
 
         orders = get_tenant_model(request, Order)
-        # Exclude cancelled and returned orders from revenue calculation
-        valid_orders = orders.exclude(status__in=['cancelled', 'returned'])
 
-        total_revenue = valid_orders.aggregate(total=Sum('total_amount'))['total'] or 0
+        # Revenue = only delivered orders, only active items (exclude cancelled/returned items)
+        delivered_orders = orders.filter(status='delivered')
+        total_revenue = OrderItem.objects.filter(
+            order__in=delivered_orders
+        ).exclude(
+            status__in=['cancelled', 'returned']
+        ).aggregate(
+            total=Sum(ExpressionWrapper(F('unit_price') * F('quantity'), output_field=DecimalField()))
+        )['total'] or 0
+
         total_orders = orders.count()
         total_customers = orders.exclude(customer_email='').values('customer_email').distinct().count()
         pending_orders = orders.filter(status='pending').count()
 
-        recent_orders_qs = orders.prefetch_related('items__product', 'items__variant__attribute_values').order_by('-created_at')[:DASHBOARD_RECENT_ORDERS_LIMIT]
+        recent_orders_qs = orders.prefetch_related('items__product', 'items__variant__attribute_values').order_by('-updated_at', '-created_at')[:DASHBOARD_RECENT_ORDERS_LIMIT]
         recent_orders = OrderSerializer(recent_orders_qs, many=True, context={'request': request}).data
 
         # Low stock products (simple approach)
@@ -290,24 +328,34 @@ class OrderViewSet(viewsets.ModelViewSet):
         low_stock_list.sort(key=lambda x: x['stock'])
         low_stock_list = low_stock_list[:DASHBOARD_LOW_STOCK_LIMIT]
 
+        # Revenue by day = only delivered orders, only active items
         today = timezone.now().date()
         revenue_by_day = []
         for i in range(DASHBOARD_DAYS_RANGE - 1, -1, -1):
             day = today - timedelta(days=i)
-            day_orders = valid_orders.filter(created_at__date=day)
+            day_delivered = delivered_orders.filter(created_at__date=day)
+            day_revenue = OrderItem.objects.filter(
+                order__in=day_delivered
+            ).exclude(
+                status__in=['cancelled', 'returned']
+            ).aggregate(
+                total=Sum(ExpressionWrapper(F('unit_price') * F('quantity'), output_field=DecimalField()))
+            )['total'] or 0
             revenue_by_day.append({
                 'date': day.strftime('%b %d'),
-                'revenue': day_orders.aggregate(total=Sum('total_amount'))['total'] or 0,
-                'orders': day_orders.count()
+                'revenue': day_revenue,
+                'orders': day_delivered.count()
             })
 
         status_counts = orders.values('status').annotate(count=Count('id'))
         status_data = [{'name': item['status'], 'value': item['count']} for item in status_counts]
 
+        # Top products = only from delivered orders, only active items
         top_products_qs = OrderItem.objects.filter(
-            order__store=tenant
+            order__store=tenant,
+            order__status='delivered'
         ).exclude(
-            order__status__in=['cancelled', 'returned']
+            status__in=['cancelled', 'returned']
         ).values(
             'product__name', 'product__sku'
         ).annotate(
