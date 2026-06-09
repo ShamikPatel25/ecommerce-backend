@@ -89,10 +89,13 @@ class AttributeValueCreateSerializer(serializers.ModelSerializer):
         fields = ['value']
     
     def validate_value(self, value):
-        """Ensure value is not empty"""
-        if not value.strip():
+        """Ensure value is not empty and <= 30 chars"""
+        val = value.strip()
+        if not val:
             raise serializers.ValidationError('Value cannot be empty')
-        return value.strip()
+        if len(val) > 30:
+            raise serializers.ValidationError('Value cannot exceed 30 characters')
+        return val
 
 
 class BulkAttributeValueSerializer(serializers.Serializer):
@@ -104,7 +107,7 @@ class BulkAttributeValueSerializer(serializers.Serializer):
     Body: { "values": ["30", "40", "42", "46"] }
     """
     values = serializers.ListField(
-        child=serializers.CharField(max_length=100),
+        child=serializers.CharField(max_length=30),
         min_length=1,
         help_text='List of values to add'
     )

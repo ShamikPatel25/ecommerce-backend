@@ -41,6 +41,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     """Order management — list, retrieve, create, update status, delete."""
     permission_classes = [IsAuthenticated, IsStoreOwner]
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    pagination_class = None
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -222,8 +223,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             .exclude(customer_email__isnull=True)
             .values('customer_email')
             .annotate(
-                total_orders=Count('id'),
-                total_spent=Sum('total_amount'),
+                total_orders=Count('id', distinct=True),
+                total_spent=Sum(
+                    ExpressionWrapper(F('items__unit_price') * F('items__quantity'), output_field=DecimalField()),
+                    filter=Q(status='delivered') & ~Q(items__status__in=['cancelled', 'returned'])
+                ),
                 last_order=Max('created_at'),
             )
         )

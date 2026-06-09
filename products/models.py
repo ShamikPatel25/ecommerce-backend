@@ -110,12 +110,12 @@ class Product(models.Model):
     
     # Pricing (for single products or base price for catalog)
     price = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         help_text='Price for single product or base price for catalog'
     )
     compare_at_price = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         null=True,
         blank=True
@@ -274,14 +274,14 @@ class ProductVariant(models.Model):
     
     # Pricing (can override product base price)
     price = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         null=True,
         blank=True,
         help_text='Leave empty to use product base price'
     )
     compare_at_price = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         null=True,
         blank=True

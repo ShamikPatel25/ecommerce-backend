@@ -4,9 +4,19 @@ from .models import (
     ProductAttribute, ProductVariant, VariantAttributeValue, ProductType
 )
 
+class SubcategorySerializer(serializers.ModelSerializer):
+    """Serializer for level 1 (subcategories) - no children field."""
+    full_path = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'slug', 'full_slug', 'parent', 'level', 'full_path', 'is_active', 'created_at']
+        read_only_fields = ['id', 'level', 'full_slug', 'created_at']
+
+
 class CategoryTreeSerializer(serializers.ModelSerializer):
     """
-    Nested Category Serializer (Shows full tree)
+    Nested Category Serializer (Shows only 2 levels: main + subcategories)
     """
     children = serializers.SerializerMethodField()
     full_path = serializers.CharField(read_only=True)
@@ -17,11 +27,20 @@ class CategoryTreeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'level', 'full_slug', 'created_at']
 
     def get_children(self, obj):
-        """Get child categories"""
-        children = obj.children.all()
+        """Get child categories only for level 0 (main categories)"""
+        if obj.level >= 1:
+            return None
+        children = obj.children.filter(is_active=True)
         if children:
-            return CategoryTreeSerializer(children, many=True).data
+            return SubcategorySerializer(children, many=True).data
         return []
+
+    def to_representation(self, instance):
+        """Remove children field for subcategories (level 1+)"""
+        data = super().to_representation(instance)
+        if instance.level >= 1:
+            data.pop('children', None)
+        return data
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -81,16 +100,17 @@ class CategorySerializer(serializers.ModelSerializer):
 class ProductMediaSerializer(serializers.ModelSerializer):
     """Product Media Serializer"""
     file_url = serializers.SerializerMethodField()
-    attribute_value_id = serializers.IntegerField(source='attribute_value.id', read_only=True, default=None)
+    attribute_value_id = serializers.UUIDField(source='attribute_value.id', read_only=True, default=None)
     attribute_value_name = serializers.CharField(source='attribute_value.value', read_only=True, default=None)
     attribute_name = serializers.CharField(source='attribute_value.attribute.name', read_only=True, default=None)
+    attribute_id = serializers.IntegerField(source='attribute_value.attribute.id', read_only=True, default=None)
 
     class Meta:
         model = ProductMedia
         fields = [
             'id', 'media_type', 'file', 'file_url', 'alt_text', 'order',
             'is_thumbnail',
-            'attribute_value_id', 'attribute_value_name', 'attribute_name',
+            'attribute_value_id', 'attribute_value_name', 'attribute_name', 'attribute_id',
             'created_at'
         ]
         read_only_fields = ['id', 'created_at']
@@ -108,17 +128,18 @@ class VariantAttributeValueSerializer(serializers.ModelSerializer):
     """Variant Attribute Value Serializer"""
     attribute_name = serializers.CharField(source='attribute_value.attribute.name', read_only=True)
     value = serializers.CharField(source='attribute_value.value', read_only=True)
+    value_id = serializers.UUIDField(source='attribute_value.id', read_only=True)
     
     class Meta:
         model = VariantAttributeValue
-        fields = ['id', 'attribute_name', 'value']
+        fields = ['id', 'attribute_name', 'value', 'value_id']
         read_only_fields = ['id']
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     """Product Variant Serializer"""
     attribute_values = VariantAttributeValueSerializer(many=True, read_only=True)
-    final_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    final_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     attribute_values_display = serializers.CharField(read_only=True)
     
     class Meta:
@@ -129,6 +150,26 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'reserved', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'price': {
+                'error_messages': {
+                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                }
+            },
+            'compare_at_price': {
+                'error_messages': {
+                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                }
+            },
+            'stock': {
+                'max_value': 99999,
+                'error_messages': {
+                    'max_value': 'Please enter a valid stock (maximum 5 digits allowed).'
+                }
+            }
+        }
 
 
 class ProductAttributeSerializer(serializers.ModelSerializer):
@@ -164,6 +205,26 @@ class ProductSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'reserved', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'price': {
+                'error_messages': {
+                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                }
+            },
+            'compare_at_price': {
+                'error_messages': {
+                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                }
+            },
+            'stock': {
+                'max_value': 99999,
+                'error_messages': {
+                    'max_value': 'Please enter a valid stock (maximum 5 digits allowed).'
+                }
+            }
+        }
     
     def get_variants_count(self, obj):
         if obj.product_type == ProductType.CATALOG:
@@ -178,6 +239,26 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             'stock', 'category', 'is_active', 'is_featured'
         ]
         read_only_fields = ['id']  
+        extra_kwargs = {
+            'price': {
+                'error_messages': {
+                    'max_digits': 'Price cannot exceed 10 digits before the decimal point.',
+                    'max_whole_digits': 'Price cannot exceed 10 digits before the decimal point.'
+                }
+            },
+            'compare_at_price': {
+                'error_messages': {
+                    'max_digits': 'Compare at price cannot exceed 10 digits before the decimal point.',
+                    'max_whole_digits': 'Compare at price cannot exceed 10 digits before the decimal point.'
+                }
+            },
+            'stock': {
+                'max_value': 99999,
+                'error_messages': {
+                    'max_value': 'Please enter a valid stock (maximum 5 digits allowed).'
+                }
+            }
+        }
     
     def validate_sku(self, value):
         """Ensure SKU is unique within the store"""
@@ -237,13 +318,19 @@ class CombinationSerializer(serializers.Serializer):
         help_text='List of AttributeValue IDs (UUIDs) for this variant'
     )
     price = serializers.DecimalField(
-        max_digits=10, decimal_places=2,
+        max_digits=12, decimal_places=2,
         required=False, allow_null=True,
-        help_text='Override price for this variant (optional)'
+        help_text='Override price for this variant (optional)',
+        error_messages={
+            'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
+            'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+        }
     )
     stock = serializers.IntegerField(
         default=0, required=False,
-        help_text='Stock quantity for this variant'
+        help_text='Stock quantity for this variant',
+        max_value=99999,
+        error_messages={'max_value': 'Please enter a valid stock (maximum 5 digits allowed).'}
     )
 
 
@@ -302,14 +389,13 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
     general_images = serializers.SerializerMethodField()
     attribute_groups = serializers.SerializerMethodField()
     all_media = serializers.SerializerMethodField()
-    variants = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
             'stock', 'category', 'category_name', 'is_active', 'is_featured',
-            'general_images', 'attribute_groups', 'all_media', 'variants',
+            'general_images', 'attribute_groups', 'all_media',
             'created_at', 'updated_at'
         ]
 
@@ -319,15 +405,6 @@ class StorefrontProductSerializer(serializers.ModelSerializer):
             many=True,
             context=self.context
         ).data
-
-    def get_variants(self, obj):
-        """Simple variant list for cart stock validation."""
-        if obj.product_type != 'catalog':
-            return []
-        return [
-            {'id': v.id, 'sku': v.sku, 'stock': v.stock, 'price': str(v.final_price)}
-            for v in obj.variants.filter(is_active=True)
-        ]
 
     def get_general_images(self, obj):
         """Images not linked to any attribute value — the main product images."""

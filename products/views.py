@@ -603,11 +603,23 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         if stock is not None:
             try:
-                variant.stock = int(stock)
+                stock_val = int(stock)
+                if stock_val > 99999:
+                    return Response({'error': 'Please enter a valid stock (maximum 5 digits allowed).'}, status=status.HTTP_400_BAD_REQUEST)
+                variant.stock = stock_val
             except (ValueError, TypeError):
                 return Response({'error': 'stock must be a number'}, status=status.HTTP_400_BAD_REQUEST)
-        if price is not None:
-            variant.price = price if price != '' else None
+        if price is not None and price != '':
+            try:
+                from decimal import Decimal
+                price_val = Decimal(str(price))
+                if price_val >= Decimal('10000000000'):
+                    return Response({'error': 'Please enter a valid price (maximum 10 digits allowed).'}, status=status.HTTP_400_BAD_REQUEST)
+                variant.price = price_val
+            except Exception:
+                return Response({'error': 'price must be a valid number'}, status=status.HTTP_400_BAD_REQUEST)
+        elif price == '':
+            variant.price = None
         variant.save()
 
         return Response(ProductVariantSerializer(variant).data)
