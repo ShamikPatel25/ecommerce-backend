@@ -85,7 +85,12 @@ class OrderItemCreateSerializer(serializers.Serializer):
     variant  = serializers.PrimaryKeyRelatedField(
         queryset=ProductVariant.objects.all(), required=False, allow_null=True, default=None
     )
-    quantity   = serializers.IntegerField(min_value=1, default=1)
+    quantity   = serializers.IntegerField(
+        min_value=1, 
+        max_value=20, 
+        default=1,
+        error_messages={'max_value': 'Cannot order more than 20 of the same item.'}
+    )
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
 
     def validate(self, data):
@@ -123,6 +128,14 @@ class OrderCreateSerializer(serializers.Serializer):
     def validate_items(self, value):
         if not value:
             raise serializers.ValidationError('Order must have at least one item.')
+        
+        item_counts = {}
+        for item in value:
+            key = (item['product'].id, item.get('variant').id if item.get('variant') else None)
+            item_counts[key] = item_counts.get(key, 0) + item.get('quantity', 1)
+            if item_counts[key] > 20:
+                raise serializers.ValidationError('Cannot order more than 20 of the same item.')
+                
         return value
 
 

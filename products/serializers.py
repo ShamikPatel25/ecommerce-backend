@@ -153,14 +153,14 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'price': {
                 'error_messages': {
-                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
-                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                    'max_digits': 'Please enter a valid price (maximum 8 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
                 }
             },
             'compare_at_price': {
                 'error_messages': {
-                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
-                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                    'max_digits': 'Please enter a valid price (maximum 8 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
                 }
             },
             'stock': {
@@ -208,14 +208,14 @@ class ProductSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'price': {
                 'error_messages': {
-                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
-                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                    'max_digits': 'Please enter a valid price (maximum 8 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
                 }
             },
             'compare_at_price': {
                 'error_messages': {
-                    'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
-                    'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+                    'max_digits': 'Please enter a valid price (maximum 8 digits allowed).',
+                    'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
                 }
             },
             'stock': {
@@ -232,7 +232,7 @@ class ProductSerializer(serializers.ModelSerializer):
         return 0
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    class Meta:
+    class Meta:             
         model = Product
         fields = [
             'id','name', 'sku', 'description', 'product_type', 'price', 'compare_at_price',
@@ -242,14 +242,14 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'price': {
                 'error_messages': {
-                    'max_digits': 'Price cannot exceed 10 digits before the decimal point.',
-                    'max_whole_digits': 'Price cannot exceed 10 digits before the decimal point.'
+                    'max_digits': 'Price cannot exceed 8 digits before the decimal point.',
+                    'max_whole_digits': 'Price cannot exceed 8 digits before the decimal point.'
                 }
             },
             'compare_at_price': {
                 'error_messages': {
-                    'max_digits': 'Compare at price cannot exceed 10 digits before the decimal point.',
-                    'max_whole_digits': 'Compare at price cannot exceed 10 digits before the decimal point.'
+                    'max_digits': 'Compare at price cannot exceed 8 digits before the decimal point.',
+                    'max_whole_digits': 'Compare at price cannot exceed 8 digits before the decimal point.'
                 }
             },
             'stock': {
@@ -322,8 +322,8 @@ class CombinationSerializer(serializers.Serializer):
         required=False, allow_null=True,
         help_text='Override price for this variant (optional)',
         error_messages={
-            'max_digits': 'Please enter a valid price (maximum 10 digits allowed).',
-            'max_whole_digits': 'Please enter a valid price (maximum 10 digits allowed).'
+            'max_digits': 'Please enter a valid price (maximum 8 digits allowed).',
+            'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
         }
     )
     stock = serializers.IntegerField(
