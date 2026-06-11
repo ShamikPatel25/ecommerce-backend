@@ -21,10 +21,10 @@ from .serializers import (
     OrderStatusUpdateSerializer,
 )
 from .utils import decrement_stock, restore_stock, reduce_reserved, restore_stock_only
-from tenants.utils import get_tenant_model
-from tenants.permissions import IsStoreOwner
-from products.models import Product
-from products.utils import get_product_thumbnail_url
+from apps.tenants.utils import get_tenant_model
+from apps.tenants.permissions import IsStoreOwner
+from apps.products.models import Product
+from apps.products.utils import get_product_thumbnail_url
 from config.constants import (
     LOW_STOCK_THRESHOLD,
     DASHBOARD_RECENT_ORDERS_LIMIT,
@@ -213,7 +213,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     @extend_schema(summary='List unique customers with order stats')
     @action(detail=False, methods=['get'], url_path='customers')
     def customers(self, request):
-        from accounts.models import User
+        from apps.accounts.models import User
 
         base_qs = get_tenant_model(request, Order)
         search = request.query_params.get('search', '').strip()

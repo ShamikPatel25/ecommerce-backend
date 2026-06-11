@@ -21,9 +21,9 @@ from .serializers import (
     GenerateCatalogRequestSerializer, ProductVariantSerializer,
     StorefrontProductSerializer
 )
-from attributes.models import Attribute, AttributeValue
-from tenants.utils import get_tenant_model
-from tenants.permissions import IsStoreOwner
+from apps.attributes.models import Attribute, AttributeValue
+from apps.tenants.utils import get_tenant_model
+from apps.tenants.permissions import IsStoreOwner
 
 
 @extend_schema(tags=['Categories'])
@@ -729,7 +729,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         while root_category.parent_id:
             root_category = Category.objects.get(id=root_category.parent_id)
 
-        from attributes.serializers import AttributeSerializer
+        from apps.attributes.serializers import AttributeSerializer
 
         # Get all attributes for the root category
         attributes = Attribute.objects.filter(

@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Attribute, AttributeValue
-from products.models import ProductAttribute, VariantAttributeValue
+from apps.products.models import ProductAttribute, VariantAttributeValue
 from .serializers import (
     AttributeSerializer,
     AttributeCreateSerializer,
@@ -13,8 +13,8 @@ from .serializers import (
     AttributeValueCreateSerializer,
     BulkAttributeValueSerializer
 )
-from tenants.utils import get_tenant_model
-from tenants.permissions import IsStoreOwner
+from apps.tenants.utils import get_tenant_model
+from apps.tenants.permissions import IsStoreOwner
 
 @extend_schema(tags=['Attributes'])
 @extend_schema_view(
@@ -259,7 +259,7 @@ class AttributeViewSet(viewsets.ModelViewSet):
         Walks up to the root parent category, since attributes
         are defined at the root category level.
         """
-        from products.models import Category
+        from apps.products.models import Category
         try:
             cat = Category.objects.get(id=category_id, store=request.tenant)
             # Walk up to root category

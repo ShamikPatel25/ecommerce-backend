@@ -1,7 +1,7 @@
 import uuid
 from django.db import models
-from tenants.models import Store
-from products.models import Category
+from apps.tenants.models import Store
+from apps.products.models import Category
 
 class Attribute(models.Model):
     """

@@ -6,10 +6,10 @@ from django.dispatch import receiver
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from orders.models import Order
-from products.models import Product, Category
-from attributes.models import Attribute
-from tenants.models import Store
+from apps.orders.models import Order
+from apps.products.models import Product, Category
+from apps.attributes.models import Attribute
+from apps.tenants.models import Store
 from .models import Notification
 
 logger = logging.getLogger(__name__)

@@ -6,8 +6,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Notification
 from .serializers import NotificationSerializer
-from tenants.utils import get_tenant_model
-from tenants.permissions import IsStoreOwner
+from apps.tenants.utils import get_tenant_model
+from apps.tenants.permissions import IsStoreOwner
 from config.constants import NOTIFICATION_UNREAD_LIMIT, NOTIFICATION_READ_LIMIT
 
 

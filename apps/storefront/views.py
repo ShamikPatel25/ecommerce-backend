@@ -8,13 +8,13 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 
-from products.models import Product, Category
-from products.serializers import StorefrontProductSerializer, CategoryTreeSerializer
-from products.utils import get_product_thumbnail_url
-from orders.models import Order, OrderItem
-from orders.serializers import OrderCreateSerializer, OrderSerializer
-from orders.utils import decrement_stock, restore_stock, restore_stock_only, restore_item_stock, restore_item_stock_only
-from storefront.authentication import OptionalJWTAuthentication
+from apps.products.models import Product, Category
+from apps.products.serializers import StorefrontProductSerializer, CategoryTreeSerializer
+from apps.products.utils import get_product_thumbnail_url
+from apps.orders.models import Order, OrderItem
+from apps.orders.serializers import OrderCreateSerializer, OrderSerializer
+from apps.orders.utils import decrement_stock, restore_stock, restore_stock_only, restore_item_stock, restore_item_stock_only
+from apps.storefront.authentication import OptionalJWTAuthentication
 from .serializers import StorefrontStoreSerializer, StorefrontProductListSerializer
 from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 

@@ -1,6 +1,6 @@
 import uuid
 from django.db import models
-from tenants.models import Store
+from apps.tenants.models import Store
 
 
 class Notification(models.Model):

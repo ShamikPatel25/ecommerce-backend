@@ -183,7 +183,7 @@ class ProductAttributeSerializer(serializers.ModelSerializer):
     
     def get_attribute_values(self, obj):
         """Get all values for this attribute"""
-        from attributes.serializers import AttributeValueSerializer
+        from apps.attributes.serializers import AttributeValueSerializer
         values = obj.attribute.values.all()
         return AttributeValueSerializer(values, many=True).data
 

@@ -1,6 +1,6 @@
 from django.db.models import F, Value
 from django.db.models.functions import Greatest
-from products.models import Product, ProductVariant
+from apps.products.models import Product, ProductVariant
 
 
 def _apply_stock_update(order, variant_updates, product_updates):

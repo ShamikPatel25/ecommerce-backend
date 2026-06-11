@@ -1,7 +1,7 @@
 import uuid
 from django.db import models
 from django.utils.text import slugify
-from tenants.models import Store
+from apps.tenants.models import Store
 
 class Category(models.Model):
     """

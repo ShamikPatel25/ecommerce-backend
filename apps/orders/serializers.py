@@ -1,8 +1,8 @@
 import re
 from rest_framework import serializers
 from .models import Order, OrderItem
-from products.models import Product, ProductVariant
-from products.utils import get_product_thumbnail_url
+from apps.products.models import Product, ProductVariant
+from apps.products.utils import get_product_thumbnail_url
 from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 

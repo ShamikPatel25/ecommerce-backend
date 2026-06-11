@@ -18,13 +18,13 @@ urlpatterns = [
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     
     # API Endpoints
-    path('api/auth/', include('accounts.urls')),
-    path('api/tenant/', include('tenants.urls')),
-    path('api/products/', include('products.urls')),
-    path('api/attributes/', include('attributes.urls')),
-    path('api/orders/', include('orders.urls')),
-    path('api/storefront/', include('storefront.urls')),
-    path('api/notifications/', include('notifications.urls')),
+    path('api/auth/', include('apps.accounts.urls')),
+    path('api/tenant/', include('apps.tenants.urls')),
+    path('api/products/', include('apps.products.urls')),
+    path('api/attributes/', include('apps.attributes.urls')),
+    path('api/orders/', include('apps.orders.urls')),
+    path('api/storefront/', include('apps.storefront.urls')),
+    path('api/notifications/', include('apps.notifications.urls')),
 ]
 
 # Serve media files — works with both runserver and daphne

@@ -1,7 +1,7 @@
 from rest_framework import serializers
-from tenants.models import Store
-from products.models import Product
-from products.utils import get_product_thumbnail_url
+from apps.tenants.models import Store
+from apps.products.models import Product
+from apps.products.utils import get_product_thumbnail_url
 
 
 class StorefrontStoreSerializer(serializers.ModelSerializer):

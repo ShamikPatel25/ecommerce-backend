@@ -2,7 +2,7 @@ import uuid
 import random
 import string
 from django.db import models
-from products.models import Product, ProductVariant
+from apps.products.models import Product, ProductVariant
 from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 

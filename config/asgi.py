@@ -5,8 +5,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django_asgi_app = get_asgi_application()
 
 from channels.routing import ProtocolTypeRouter, URLRouter
-from notifications.routing import websocket_urlpatterns
-from notifications.middleware import JWTAuthMiddleware
+from apps.notifications.routing import websocket_urlpatterns
+from apps.notifications.middleware import JWTAuthMiddleware
 
 application = ProtocolTypeRouter({
     'http': django_asgi_app,
