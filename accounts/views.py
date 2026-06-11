@@ -167,6 +167,7 @@ def user_profile_view(request):
     tags=['Authentication'],
     summary="Update user profile",
     description="Update the authenticated user's profile (first_name, last_name, phone, username)",
+    request=UserProfileUpdateSerializer,
 )
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
@@ -184,6 +185,7 @@ def update_profile_view(request):
     tags=['Authentication'],
     summary="Change password",
     description="Change the authenticated user's password",
+    request=ChangePasswordSerializer,
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -200,6 +202,7 @@ def change_password_view(request):
     tags=['Authentication'],
     summary="Request password reset",
     description="Send a password reset link to the user's email. Always returns success message for security.",
+    request=ForgotPasswordSerializer,
 )
 @api_view(['POST'])
 @authentication_classes([])
@@ -235,6 +238,16 @@ def forgot_password_view(request):
     tags=['Authentication'],
     summary="Verify reset token",
     description="Check if a password reset token is still valid.",
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'uid': {'type': 'string'},
+                'token': {'type': 'string'}
+            },
+            'required': ['uid', 'token']
+        }
+    },
 )
 @api_view(['POST'])
 @authentication_classes([])
@@ -262,6 +275,7 @@ def verify_reset_token_view(request):
     tags=['Authentication'],
     summary="Reset password",
     description="Set a new password using the reset token.",
+    request=ResetPasswordSerializer,
 )
 @api_view(['POST'])
 @authentication_classes([])

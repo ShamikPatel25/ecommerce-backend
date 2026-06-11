@@ -1,3 +1,4 @@
+from rest_framework import filters
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
@@ -32,7 +33,8 @@ from .serializers import StoreSerializer, StoreCreateSerializer
 class StoreViewSet(viewsets.ModelViewSet):
     """Multi-tenant store management"""
     permission_classes = [IsAuthenticated]
-    pagination_class = None
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'subdomain']
     
     def get_queryset(self):
         """Return only stores owned by current user"""

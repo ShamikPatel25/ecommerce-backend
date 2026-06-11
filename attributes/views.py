@@ -1,3 +1,4 @@
+from rest_framework import filters
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
@@ -53,7 +54,8 @@ class AttributeViewSet(viewsets.ModelViewSet):
        { "values": ["30", "40", "42", "46"] }
     """
     permission_classes = [IsAuthenticated, IsStoreOwner]
-    pagination_class = None
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name']
     
     def get_queryset(self):
         """Return only attributes for current tenant"""

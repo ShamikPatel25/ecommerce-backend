@@ -1,3 +1,4 @@
+from rest_framework import filters
 import logging
 
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -40,8 +41,9 @@ from config.constants import (
 class OrderViewSet(viewsets.ModelViewSet):
     """Order management — list, retrieve, create, update status, delete."""
     permission_classes = [IsAuthenticated, IsStoreOwner]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['id', 'customer_name', 'customer_email', 'status']
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
-    pagination_class = None
 
     def get_serializer_class(self):
         if self.action == 'create':

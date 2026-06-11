@@ -1,3 +1,4 @@
+from rest_framework import filters
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action
@@ -121,6 +122,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class ProductViewSet(viewsets.ModelViewSet):
     """Complete Product Management with Catalog Generation"""
     permission_classes = [IsAuthenticated, IsStoreOwner]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'sku', 'description']
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:

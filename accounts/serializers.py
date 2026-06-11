@@ -61,6 +61,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Username can only contain letters and numbers. Special characters like @, ., # are not allowed.")
         return value
 
+    def validate_phone(self, value):
+        if value:
+            if not value.isdigit():
+                raise serializers.ValidationError("Phone number can only contain numbers.")
+            if len(value) < 10 or len(value) > 15:
+                raise serializers.ValidationError("Phone number must be between 10 and 15 digits.")
+        return value
+
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({
@@ -111,6 +119,14 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         if User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists():
             raise serializers.ValidationError('This email is already in use.')
+        return value
+
+    def validate_phone(self, value):
+        if value:
+            if not value.isdigit():
+                raise serializers.ValidationError("Phone number can only contain numbers.")
+            if len(value) < 10 or len(value) > 15:
+                raise serializers.ValidationError("Phone number must be between 10 and 15 digits.")
         return value
 
 
