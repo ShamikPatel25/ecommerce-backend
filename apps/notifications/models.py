@@ -1,6 +1,5 @@
 import uuid
 from django.db import models
-from apps.tenants.models import Store
 
 
 class Notification(models.Model):
@@ -17,9 +16,6 @@ class Notification(models.Model):
         ATTRIBUTE_DELETED = 'attribute_deleted', 'Attribute Deleted'
         STORE_CREATED = 'store_created', 'Store Created'
 
-    store = models.ForeignKey(
-        Store, on_delete=models.CASCADE, related_name='notifications'
-    )
     notification_type = models.CharField(
         max_length=30, choices=NotificationType.choices
     )
@@ -32,9 +28,9 @@ class Notification(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['store', '-created_at']),
-            models.Index(fields=['store', 'is_read']),
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['is_read']),
         ]
 
     def __str__(self):
-        return f"[{self.store.subdomain}] {self.title}"
+        return f"{self.title}"

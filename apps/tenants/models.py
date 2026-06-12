@@ -2,8 +2,9 @@ import uuid
 from django.db import models
 from django.conf import settings
 from django.core.validators import RegexValidator
+from django_tenants.models import TenantMixin, DomainMixin
 
-class Store(models.Model):
+class Store(TenantMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # Subdomain validator - allows lowercase letters, numbers, and underscores
@@ -28,7 +29,8 @@ class Store(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='owned_stores',
-        help_text='User who created/owns this store'
+        help_text='User who created/owns this store',
+        null=True, blank=True
     )
     
     # Store Settings
@@ -51,6 +53,10 @@ class Store(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # default true, schema will be automatically created and synced when it is saved
+    auto_create_schema = True
+    auto_drop_schema = True
     
     class Meta:
         ordering = ['-created_at']
@@ -59,6 +65,29 @@ class Store(models.Model):
         indexes = [
             models.Index(fields=['is_active', 'created_at']),
         ]
+    
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        if not self.schema_name:
+            self.schema_name = self.subdomain
+            
+        super().save(*args, **kwargs)
+        
+        # Auto-create the domain for the store
+        if is_new:
+            from apps.tenants.models import Domain
+            if settings.DEBUG:
+                domain_name = f"{self.subdomain}.localhost"
+            else:
+                from decouple import config
+                domain = config('DOMAIN', default='myplatform.com')
+                domain_name = f"{self.subdomain}.{domain}"
+                
+            Domain.objects.get_or_create(
+                domain=domain_name,
+                tenant=self,
+                is_primary=True
+            )
     
     def __str__(self):
         return f"{self.name} ({self.subdomain})"
@@ -70,3 +99,6 @@ class Store(models.Model):
         from decouple import config
         domain = config('DOMAIN', default='myplatform.com')
         return f"{self.subdomain}.{domain}"
+
+class Domain(DomainMixin):
+    pass

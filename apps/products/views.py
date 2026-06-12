@@ -47,7 +47,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return get_tenant_model(self.request, Category)
 
     def perform_create(self, serializer):
-        serializer.save(store=self.request.tenant)
+        serializer.save()
 
     def perform_destroy(self, instance):
         product_count = instance.products.count()
@@ -180,7 +180,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(store=self.request.tenant)
+        serializer.save()
 
     @extend_schema(summary="Toggle product active status")
     @action(detail=True, methods=['post'])
@@ -213,7 +213,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         sku = request.data.get('sku', '').strip().upper()
         if not sku:
             return Response({'exists': False})
-        exists = Product.objects.filter(store=request.tenant, sku=sku).exists()
+        exists = Product.objects.filter(sku=sku).exists()
         return Response({'exists': exists})
 
     @extend_schema(
@@ -289,10 +289,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         if attribute_value_id:
             try:
-                attribute_value_obj = AttributeValue.objects.get(
-                    id=attribute_value_id,
-                    attribute__store=product.store,
-                )
+                attribute_value_obj = AttributeValue.objects.get(id=attribute_value_id)
             except AttributeValue.DoesNotExist:
                 return None, False, Response(
                     {'error': 'Attribute value not found'},
@@ -439,7 +436,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Validate attributes belong to same category
         attributes = Attribute.objects.filter(
             id__in=attribute_ids,
-            store=request.tenant
+            
         )
         
         if attributes.count() != len(attribute_ids):
@@ -667,10 +664,9 @@ class ProductViewSet(viewsets.ModelViewSet):
     
     def _create_variant(self, product, attribute_value_ids, price=None, stock=0):
         """Create a single variant. Returns (variant, created) — skips if duplicate SKU exists."""
-        # Validate attribute values belong to this product's store
+        # Validate attribute values
         attr_values = AttributeValue.objects.filter(
             id__in=attribute_value_ids,
-            attribute__store=product.store,
         )
 
         if attr_values.count() != len(attribute_value_ids):
@@ -734,7 +730,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         # Get all attributes for the root category
         attributes = Attribute.objects.filter(
             category=root_category,
-            store=request.tenant
+            
         ).prefetch_related('values')
         
         serializer = AttributeSerializer(attributes, many=True)

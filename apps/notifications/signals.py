@@ -19,10 +19,11 @@ LOW_STOCK_THRESHOLD = 5
 
 def _push_to_websocket(notification):
     """Send notification to the store's WebSocket group."""
+    from django.db import connection
     channel_layer = get_channel_layer()
-    if not channel_layer:
+    if not channel_layer or not hasattr(connection, 'tenant') or not connection.tenant:
         return
-    group_name = f'store_{notification.store_id}_notifications'
+    group_name = f'store_{connection.tenant.id}_notifications'
     async_to_sync(channel_layer.group_send)(
         group_name,
         {
@@ -59,12 +60,11 @@ def order_notification(sender, instance, created, **kwargs):
         # Defer notification creation to after transaction commits,
         # so total_amount reflects the added items.
         order_id = instance.id
-        store_id = instance.store_id
         customer_name = instance.customer_name
         def _create_order_notification():
             order = Order.objects.get(pk=order_id)
             notif = Notification.objects.create(
-                store_id=store_id,
+                
                 notification_type=Notification.NotificationType.ORDER_CREATED,
                 title='New Order',
                 message=f'Order {order.order_number} placed by {customer_name}',
@@ -76,7 +76,7 @@ def order_notification(sender, instance, created, **kwargs):
         old_status = getattr(instance, '_old_status', None)
         if old_status and old_status != instance.status:
             notif = Notification.objects.create(
-                store=instance.store,
+                
                 notification_type=Notification.NotificationType.ORDER_STATUS_CHANGED,
                 title='Order Status Updated',
                 message=f'Order {instance.order_number}: {old_status} → {instance.status}',
@@ -91,7 +91,7 @@ def order_notification(sender, instance, created, **kwargs):
 def product_notification(sender, instance, created, **kwargs):
     if created:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.PRODUCT_CREATED,
             title='Product Created',
             message=f'New product "{instance.name}" added',
@@ -107,7 +107,7 @@ def product_notification(sender, instance, created, **kwargs):
             stock = instance.stock
         if instance.product_type == 'single' and stock <= LOW_STOCK_THRESHOLD:
             notif = Notification.objects.create(
-                store=instance.store,
+                
                 notification_type=Notification.NotificationType.PRODUCT_LOW_STOCK,
                 title='Low Stock Alert',
                 message=f'"{instance.name}" has only {stock} units left',
@@ -120,7 +120,7 @@ def product_notification(sender, instance, created, **kwargs):
 def product_deleted_notification(sender, instance, **kwargs):
     try:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.PRODUCT_DELETED,
             title='Product Deleted',
             message=f'Product "{instance.name}" was deleted',
@@ -137,7 +137,7 @@ def product_deleted_notification(sender, instance, **kwargs):
 def category_notification(sender, instance, created, **kwargs):
     if created:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.CATEGORY_CREATED,
             title='Category Created',
             message=f'New category "{instance.name}" added',
@@ -150,7 +150,7 @@ def category_notification(sender, instance, created, **kwargs):
 def category_deleted_notification(sender, instance, **kwargs):
     try:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.CATEGORY_DELETED,
             title='Category Deleted',
             message=f'Category "{instance.name}" was deleted',
@@ -167,7 +167,7 @@ def category_deleted_notification(sender, instance, **kwargs):
 def attribute_notification(sender, instance, created, **kwargs):
     if created:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.ATTRIBUTE_CREATED,
             title='Attribute Created',
             message=f'New attribute "{instance.name}" added to {instance.category.name}',
@@ -180,7 +180,7 @@ def attribute_notification(sender, instance, created, **kwargs):
 def attribute_deleted_notification(sender, instance, **kwargs):
     try:
         notif = Notification.objects.create(
-            store=instance.store,
+            
             notification_type=Notification.NotificationType.ATTRIBUTE_DELETED,
             title='Attribute Deleted',
             message=f'Attribute "{instance.name}" was deleted',
@@ -191,16 +191,3 @@ def attribute_deleted_notification(sender, instance, **kwargs):
         logger.warning('Failed to create notification for attribute deletion: %s', instance.pk)
 
 
-# ──────────────────────── STORE ────────────────────────
-
-@receiver(post_save, sender=Store)
-def store_notification(sender, instance, created, **kwargs):
-    if created:
-        notif = Notification.objects.create(
-            store=instance,
-            notification_type=Notification.NotificationType.STORE_CREATED,
-            title='Store Created',
-            message=f'Store "{instance.name}" is now live',
-            data={'store_id': str(instance.id), 'subdomain': instance.subdomain},
-        )
-        transaction.on_commit(lambda n=notif: _push_to_websocket(n))

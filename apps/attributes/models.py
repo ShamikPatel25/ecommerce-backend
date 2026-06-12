@@ -1,6 +1,5 @@
 import uuid
 from django.db import models
-from apps.tenants.models import Store
 from apps.products.models import Category
 
 class Attribute(models.Model):
@@ -15,11 +14,6 @@ class Attribute(models.Model):
     IMPORTANT: One attribute belongs to ONE category
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    store = models.ForeignKey(
-        Store,
-        on_delete=models.CASCADE,
-        related_name='attributes'
-    )
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
@@ -36,7 +30,7 @@ class Attribute(models.Model):
     
     class Meta:
         ordering = ['category', 'name']
-        unique_together = ['store', 'category', 'name']  
+        unique_together = ['category', 'name']  
         verbose_name = 'Attribute'
         verbose_name_plural = 'Attributes'
     

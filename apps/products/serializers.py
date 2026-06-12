@@ -56,9 +56,9 @@ class CategorySerializer(serializers.ModelSerializer):
     def get_product_count(self, obj):
         return obj.products.filter(is_active=True).count()
 
-    def _validate_uniqueness(self, data, store, parent):
+    def _validate_uniqueness(self, data, parent):
         """Check duplicate name within same parent, full_slug must be unique store-wide."""
-        qs = Category.objects.filter(store=store)
+        qs = Category.objects.all()
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
 
@@ -88,11 +88,9 @@ class CategorySerializer(serializers.ModelSerializer):
         if parent:
             if parent.level >= 1:
                 raise serializers.ValidationError({'parent': 'Maximum 2 levels of categories allowed (Main + Subcategory)'})
-            if tenant and parent.store_id != tenant.id:
-                raise serializers.ValidationError({'parent': 'Parent category does not belong to your store.'})
 
         if tenant:
-            self._validate_uniqueness(data, tenant, parent)
+            self._validate_uniqueness(data, parent)
 
         return data
 
@@ -266,7 +264,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         product_id = self.instance.id if self.instance else None
         qs = Product.objects.filter(sku=value)
         if request and hasattr(request, 'tenant'):
-            qs = qs.filter(store=request.tenant)
+            qs = qs.filter()
         if qs.exclude(id=product_id).exists():
             raise serializers.ValidationError('Product with this SKU already exists.')
         return value
@@ -282,12 +280,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         category = data.get('category', getattr(self.instance, 'category', None))
 
-        # Tenant isolation: category must belong to the same store
-        if category and request and hasattr(request, 'tenant'):
-            if category.store_id != request.tenant.id:
-                raise serializers.ValidationError({
-                    'category': 'Category does not belong to your store.'
-                })
+        # Tenant isolation is natively handled by the PostgreSQL schema
+        # The category object would not be found if it didn't belong to this tenant's schema.
 
         # When activating, check if category is active
         is_active = data.get('is_active')

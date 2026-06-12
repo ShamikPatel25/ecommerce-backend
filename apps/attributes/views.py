@@ -81,7 +81,7 @@ class AttributeViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Create attribute and its initial values in one go."""
-        attribute = serializer.save(store=self.request.tenant)
+        attribute = serializer.save()
 
         # Handle values passed alongside the create request
         raw_values = self.request.data.get('values', [])
@@ -261,7 +261,7 @@ class AttributeViewSet(viewsets.ModelViewSet):
         """
         from apps.products.models import Category
         try:
-            cat = Category.objects.get(id=category_id, store=request.tenant)
+            cat = Category.objects.get(id=category_id, )
             # Walk up to root category
             while cat.parent_id:
                 cat = Category.objects.get(id=cat.parent_id)

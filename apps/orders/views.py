@@ -102,18 +102,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         data = serializer.validated_data
 
-        # Validate all products belong to this store
-        for item_data in data['items']:
-            if item_data['product'].store_id != request.tenant.id:
-                return Response(
-                    {'error': 'Product does not belong to this store'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # Product isolation is handled by the schema natively
 
         try:
             with transaction.atomic():
                 order = Order.objects.create(
-                    store=request.tenant,
                     customer_name=data['customer_name'],
                     customer_email=data.get('customer_email'),
                     customer_phone=data.get('customer_phone'),
@@ -175,7 +168,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             # Lock the order row to prevent concurrent status changes
             try:
-                order = Order.objects.select_for_update().get(pk=pk, store=request.tenant)
+                order = Order.objects.select_for_update().get(pk=pk, )
             except Order.DoesNotExist:
                 return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
             old_status = order.status
@@ -319,7 +312,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         recent_orders = OrderSerializer(recent_orders_qs, many=True, context={'request': request}).data
 
         # Low stock products (simple approach)
-        products_qs = Product.objects.filter(store=tenant, is_active=True).prefetch_related('variants')
+        products_qs = Product.objects.filter(is_active=True).prefetch_related('variants')
         low_stock_list = []
         for p in products_qs:
             stock = sum(v.stock for v in p.variants.all()) if p.product_type == 'catalog' else p.stock
@@ -358,7 +351,6 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         # Top products = only from delivered orders, only active items
         top_products_qs = OrderItem.objects.filter(
-            order__store=tenant,
             order__status='delivered'
         ).exclude(
             status__in=['cancelled', 'returned']

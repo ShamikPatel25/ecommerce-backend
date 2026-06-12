@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, CustomerAddress
+from .models import User
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
@@ -17,9 +17,3 @@ class CustomUserAdmin(UserAdmin):
         ('Additional Info', {'fields': ('email', 'phone', 'is_store_owner')}),
     )
 
-
-@admin.register(CustomerAddress)
-class CustomerAddressAdmin(admin.ModelAdmin):
-    list_display = ['user', 'label', 'city', 'state', 'is_default']
-    list_filter = ['label', 'is_default']
-    search_fields = ['user__email', 'city', 'state']

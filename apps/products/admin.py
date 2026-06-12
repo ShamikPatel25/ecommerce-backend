@@ -34,24 +34,24 @@ class VariantAttributeValueInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'store', 'parent', 'level', 'is_active', 'created_at')
-    list_filter = ('is_active', 'level', 'store')
+    list_display = ('name', 'parent', 'level', 'is_active', 'created_at')
+    list_filter = ('is_active', 'level')
     search_fields = ('name', 'slug')
     prepopulated_fields = {'slug': ('name',)}
-    list_select_related = ('store', 'parent')
+    list_select_related = ('parent',)
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'sku', 'store', 'category', 'product_type', 'price', 'stock', 'is_active', 'is_featured')
-    list_filter = ('product_type', 'is_active', 'is_featured', 'store')
+    list_display = ('name', 'sku', 'category', 'product_type', 'price', 'stock', 'is_active', 'is_featured')
+    list_filter = ('product_type', 'is_active', 'is_featured')
     search_fields = ('name', 'sku')
-    list_select_related = ('store', 'category')
+    list_select_related = ('category',)
     inlines = [ProductMediaInline, ProductAttributeInline, ProductVariantInline]
 
     fieldsets = (
         ('Basic Info', {
-            'fields': ('store', 'category', 'name', 'sku', 'product_type'),
+            'fields': ('category', 'name', 'sku', 'product_type'),
         }),
         ('Pricing & Stock', {
             'fields': ('price', 'compare_at_price', 'stock'),

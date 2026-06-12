@@ -52,7 +52,7 @@ class StorefrontCategoryListView(APIView):
     @require_tenant
     def get(self, request):
         categories = Category.objects.filter(
-            store=request.tenant, is_active=True, parent=None
+            is_active=True, parent=None
         ).prefetch_related('children__children')
         serializer = CategoryTreeSerializer(categories, many=True)
         return Response(serializer.data)
@@ -79,7 +79,7 @@ class StorefrontProductListView(generics.ListAPIView):
             return Product.objects.none()
 
         qs = Product.objects.filter(
-            store=self.request.tenant, is_active=True
+            is_active=True
         ).select_related('category').prefetch_related('media', 'variants')
 
         # Hide out-of-stock products
@@ -131,7 +131,7 @@ class StorefrontProductListView(generics.ListAPIView):
         try:
             # First try full_slug (path-based), then fall back to simple slug
             cat = Category.objects.filter(
-                store=self.request.tenant, is_active=True
+                is_active=True
             ).filter(
                 Q(full_slug=category_slug) | Q(slug=category_slug)
             ).first()
@@ -172,7 +172,7 @@ class StorefrontProductDetailView(APIView):
                     'selected_attributes__attribute__values',
                     'variants__attribute_values__attribute_value__attribute',
                 )
-            ).get(store=request.tenant, slug=slug, is_active=True)
+            ).get(slug=slug, is_active=True)
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'}, status=404)
 
@@ -198,15 +198,11 @@ class StorefrontOrderCreateView(APIView):
         if request.user.is_authenticated:
             data['customer_email'] = request.user.email
 
-        # Validate all products belong to this store and enforce server-side pricing
+        # Validate all products and enforce server-side pricing
         for item_data in data['items']:
             product = item_data['product']
             variant = item_data.get('variant')
-            if product.store_id != request.tenant.id:
-                return Response(
-                    {'error': 'Product does not belong to this store'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            
             # Enforce the real price — never trust client-submitted unit_price
             if variant and variant.price is not None:
                 item_data['unit_price'] = variant.price
@@ -216,7 +212,6 @@ class StorefrontOrderCreateView(APIView):
         try:
             with transaction.atomic():
                 order = Order.objects.create(
-                    store=request.tenant,
                     customer_name=data['customer_name'],
                     customer_email=data['customer_email'],
                     customer_phone=data['customer_phone'],
@@ -273,7 +268,6 @@ class StorefrontCustomerOrdersView(APIView):
     @require_tenant
     def get(self, request):
         orders = Order.objects.filter(
-            store=request.tenant,
             customer_email__iexact=request.user.email
         ).prefetch_related(
             'items__product__media',
@@ -291,7 +285,7 @@ class StorefrontCustomerOrderDetailView(APIView):
     def get(self, request, order_id):
         try:
             order = Order.objects.prefetch_related('items__product').get(
-                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+                id=order_id, customer_email__iexact=request.user.email
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
@@ -307,7 +301,7 @@ class StorefrontCustomerOrderCancelView(APIView):
     def post(self, request, order_id):
         try:
             order = Order.objects.prefetch_related('items__product', 'items__variant').get(
-                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+                id=order_id, customer_email__iexact=request.user.email
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
@@ -329,7 +323,7 @@ class StorefrontCustomerOrderReturnView(APIView):
     def post(self, request, order_id):
         try:
             order = Order.objects.prefetch_related('items__product', 'items__variant').get(
-                id=order_id, store=request.tenant, customer_email__iexact=request.user.email
+                id=order_id, customer_email__iexact=request.user.email
             )
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=404)
@@ -351,7 +345,7 @@ class StorefrontCustomerOrderItemCancelView(APIView):
     def post(self, request, item_id):
         try:
             item = OrderItem.objects.select_related('order', 'product', 'variant').get(
-                id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
+                id=item_id, order__order__customer_email__iexact=request.user.email
             )
         except OrderItem.DoesNotExist:
             return Response({'error': 'Item not found'}, status=404)
@@ -379,7 +373,7 @@ class StorefrontCustomerOrderItemReturnView(APIView):
     def post(self, request, item_id):
         try:
             item = OrderItem.objects.select_related('order', 'product', 'variant').get(
-                id=item_id, order__store=request.tenant, order__customer_email__iexact=request.user.email
+                id=item_id, order__order__customer_email__iexact=request.user.email
             )
         except OrderItem.DoesNotExist:
             return Response({'error': 'Item not found'}, status=404)

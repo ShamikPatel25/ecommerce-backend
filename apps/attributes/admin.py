@@ -7,8 +7,8 @@ class AttributeValueInline(admin.TabularInline):
 
 @admin.register(Attribute)
 class AttributeAdmin(admin.ModelAdmin):
-    list_display = ['name', 'category', 'store', 'values_count', 'created_at']
-    list_filter = ['category', 'store', 'created_at']
+    list_display = ['name', 'category', 'values_count', 'created_at']
+    list_filter = ['category', 'created_at']
     search_fields = ['name', 'category__name']
     inlines = [AttributeValueInline]
     

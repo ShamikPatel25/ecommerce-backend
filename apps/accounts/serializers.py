@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomerAddress
 import re
 
 User = get_user_model()
@@ -162,19 +161,3 @@ class ResetPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({'new_password': "New passwords don't match."})
         return attrs
 
-
-class CustomerAddressSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CustomerAddress
-        fields = ['id', 'label', 'address_line_1', 'address_line_2', 'city',
-                  'state', 'postal_code', 'country', 'is_default', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-    def validate_label(self, value):
-        user = self.context['request'].user
-        qs = CustomerAddress.objects.filter(user=user, label=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise serializers.ValidationError(f'You already have a {value} address. Please update it instead.')
-        return value

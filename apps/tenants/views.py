@@ -48,9 +48,14 @@ class StoreViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """Create new store"""
+        from django_tenants.utils import schema_context
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        store = serializer.save()
+        
+        # Tenants MUST be created in the public schema
+        with schema_context('public'):
+            store = serializer.save()
         
         return Response({
             'store': StoreSerializer(store).data,

@@ -42,9 +42,6 @@ class Order(models.Model):
         ('other', 'Other'),
     ]
 
-    store           = models.ForeignKey(
-        'tenants.Store', on_delete=models.CASCADE, related_name='orders'
-    )
     customer_name   = models.CharField(max_length=255)
     customer_email  = models.EmailField()
     customer_phone  = models.CharField(max_length=30)
@@ -67,10 +64,10 @@ class Order(models.Model):
     class Meta:
         ordering = ['-updated_at', '-created_at']
         indexes = [
-            models.Index(fields=['store', 'status']),
-            models.Index(fields=['store', 'customer_email']),
-            models.Index(fields=['store', 'created_at']),
-            models.Index(fields=['store', 'updated_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['customer_email']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['updated_at']),
         ]
 
     def __str__(self):

@@ -33,7 +33,10 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 
 # Application definition
 
-INSTALLED_APPS = [
+SHARED_APPS = (
+    'django_tenants',  # mandatory
+    'apps.tenants', # you must list the app where your tenant model resides in
+
     'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -51,29 +54,43 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_spectacular',
     'channels',
-    # Local apps
+    
+    # Accounts (contains User model for public schema)
     'apps.accounts',
-    'apps.tenants',
+)
+
+TENANT_APPS = (
+    # The following Django contrib apps must be in TENANT_APPS
+    'django.contrib.contenttypes',
+
+    # your tenant-specific apps
     'apps.products',
     'apps.attributes',
     'apps.orders',
     'apps.notifications',
     'apps.storefront',
-]
+)
+
+INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
+
+TENANT_MODEL = "tenants.Store" # app.Model
+TENANT_DOMAIN_MODEL = "tenants.Domain" # app.Model
+
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'apps.tenants.middleware.TenantHeaderMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'apps.tenants.middleware.TenantMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
+PUBLIC_SCHEMA_URLCONF = 'config.urls_public'
 
 TEMPLATES = [
     {
@@ -96,6 +113,10 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 # Database
 # Production: uses DATABASE_URL (Neon). Local dev: uses individual DB_* vars.
+DATABASE_ROUTERS = (
+    'django_tenants.routers.TenantSyncRouter',
+)
+
 _database_url = config('DATABASE_URL', default=None)
 if _database_url:
     DATABASES = {
@@ -105,10 +126,11 @@ if _database_url:
             conn_health_checks=True,
         )
     }
+    DATABASES['default']['ENGINE'] = 'django_tenants.postgresql_backend'
 else:
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': config('DB_NAME'),
             'USER': config('DB_USER'),
             'PASSWORD': config('DB_PASSWORD'),
@@ -288,7 +310,7 @@ _redis_url = config('REDIS_URL', default=None)
 if _redis_url:
     CHANNEL_LAYERS = {
         'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'BACKEND': 'channels_redis.pubsub.RedisPubSubChannelLayer',
             'CONFIG': {
                 'hosts': [_redis_url],
             },
@@ -297,12 +319,9 @@ if _redis_url:
 else:
     CHANNEL_LAYERS = {
         'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'BACKEND': 'channels_redis.pubsub.RedisPubSubChannelLayer',
             'CONFIG': {
-                'hosts': [(
-                    config('REDIS_HOST', default='127.0.0.1'),
-                    config('REDIS_PORT', default=6379, cast=int),
-                )],
+                'hosts': [f"redis://{config('REDIS_HOST', default='127.0.0.1')}:{config('REDIS_PORT', default=6379)}/0"],
             },
         },
     }

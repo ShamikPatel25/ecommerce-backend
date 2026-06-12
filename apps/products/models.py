@@ -1,7 +1,6 @@
 import uuid
 from django.db import models
 from django.utils.text import slugify
-from apps.tenants.models import Store
 
 class Category(models.Model):
     """
@@ -12,11 +11,6 @@ class Category(models.Model):
     Level 1: Smartphones (parent=Electronics) - Subcategory
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    store = models.ForeignKey(
-        Store,
-        on_delete=models.CASCADE,
-        related_name='categories'
-    )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=100)
     full_slug = models.CharField(max_length=300, blank=True, db_index=True)
@@ -42,7 +36,7 @@ class Category(models.Model):
     class Meta:
         verbose_name_plural = 'Categories'
         ordering = ['level', 'name']
-        unique_together = ['store', 'full_slug']
+        unique_together = ['full_slug']
 
     def save(self, *args, **kwargs):
         """Auto-calculate level and full_slug based on parent"""
@@ -81,11 +75,6 @@ class Product(models.Model):
     Enhanced Product Model with Catalog Support
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    store = models.ForeignKey(
-        Store,
-        on_delete=models.CASCADE,
-        related_name='products'
-    )
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
@@ -141,12 +130,12 @@ class Product(models.Model):
     
     class Meta:
         ordering = ['-created_at']
-        unique_together = ['store', 'slug']
+        unique_together = ['slug']
         constraints = [
-            models.UniqueConstraint(fields=['store', 'sku'], name='unique_product_sku_per_store'),
+            models.UniqueConstraint(fields=['sku'], name='unique_product_sku_per_store'),
         ]
         indexes = [
-            models.Index(fields=['store', 'is_active']),
+            models.Index(fields=['is_active']),
             models.Index(fields=['sku']),
             models.Index(fields=['product_type']),
         ]
@@ -156,7 +145,7 @@ class Product(models.Model):
             base_slug = slugify(self.name)
             slug = base_slug
             counter = 1
-            while Product.objects.filter(store=self.store, slug=slug).exclude(pk=self.pk).exists():
+            while Product.objects.filter(slug=slug).exclude(pk=self.pk).exists():
                 slug = f"{base_slug}-{counter}"
                 counter += 1
             self.slug = slug

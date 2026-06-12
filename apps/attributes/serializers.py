@@ -46,10 +46,7 @@ class AttributeSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         category = data.get('category')
         
-        if category and category.store != request.tenant:
-            raise serializers.ValidationError({
-                'category': 'Category does not belong to your store'
-            })
+        # Category validation is handled by schema isolation
         
         return data
 
@@ -68,11 +65,7 @@ class AttributeCreateSerializer(serializers.ModelSerializer):
         """Ensure category belongs to same store"""
         request = self.context.get('request')
         category = data.get('category')
-        if category and request and hasattr(request, 'tenant'):
-            if category.store_id != request.tenant.id:
-                raise serializers.ValidationError({
-                    'category': 'Category does not belong to your store.'
-                })
+        # Category isolation is handled by the PostgreSQL schema
         return data
 
 
