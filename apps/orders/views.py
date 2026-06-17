@@ -265,7 +265,23 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         # Sort by last order
         result.sort(key=lambda x: x.get('last_order') or '', reverse=True)
-        return Response(result)
+        
+        # Paginate results
+        page = request.query_params.get('page', 1)
+        page_size = request.query_params.get('page_size', 10)
+        try:
+            page = int(page)
+            page_size = int(page_size)
+        except ValueError:
+            page, page_size = 1, 10
+            
+        start = (page - 1) * page_size
+        end = start + page_size
+        
+        return Response({
+            'count': len(result),
+            'results': result[start:end]
+        })
 
     @extend_schema(summary='Orders for a single customer (by email or name)')
     @action(detail=False, methods=['get'], url_path='customers/by-email')

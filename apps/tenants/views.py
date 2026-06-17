@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from .models import Store
 from .serializers import StoreSerializer, StoreCreateSerializer
 
+from .permissions import IsStoreOwnerRole, IsOwnerOfStoreObject
+
 @extend_schema(tags=['Stores'])
 @extend_schema_view(
     list=extend_schema(
@@ -32,13 +34,17 @@ from .serializers import StoreSerializer, StoreCreateSerializer
 )
 class StoreViewSet(viewsets.ModelViewSet):
     """Multi-tenant store management"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStoreOwnerRole, IsOwnerOfStoreObject]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'subdomain']
     
     def get_queryset(self):
-        """Return only stores owned by current user"""
-        return Store.objects.filter(owner=self.request.user)
+        """Return only stores owned by current user or all stores if superuser"""
+        if getattr(self.request.user, 'is_superuser', False):
+            return Store.objects.all()
+        if getattr(self.request.user, 'is_store_owner', False):
+            return Store.objects.filter(owner=self.request.user)
+        return Store.objects.none()
     
     def get_serializer_class(self):
         """Use different serializer for creation"""
@@ -61,6 +67,18 @@ class StoreViewSet(viewsets.ModelViewSet):
             'store': StoreSerializer(store).data,
             'message': f'Store "{store.name}" created successfully'
         }, status=status.HTTP_201_CREATED)
+        
+    def perform_update(self, serializer):
+        """Update store in public schema"""
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            serializer.save()
+
+    def perform_destroy(self, instance):
+        """Delete store in public schema"""
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            instance.delete()
     
     @extend_schema(
         summary="Get my stores",
@@ -84,9 +102,12 @@ class StoreViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def toggle_active(self, request, pk=None):
         """Toggle store active status"""
+        from django_tenants.utils import schema_context
+        
         store = self.get_object()
         store.is_active = not store.is_active
-        store.save()
+        with schema_context('public'):
+            store.save()
         
         return Response({
             'store': StoreSerializer(store).data,

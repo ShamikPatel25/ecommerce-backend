@@ -1,6 +1,6 @@
 from functools import wraps
 
-from rest_framework import generics, status
+from rest_framework import generics, status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,7 +20,6 @@ from config.constants import DEFAULT_COUNTRY, DEFAULT_ADDRESS_TYPE
 
 _STORE_NOT_FOUND = Response({'error': 'Store not found'}, status=404)
 
-
 def require_tenant(fn):
     """Decorator that returns 404 when request.tenant is falsy."""
     @wraps(fn)
@@ -31,6 +30,78 @@ def require_tenant(fn):
             return Response({'error': 'Store not found'}, status=404)
         return fn(self_or_request, *args, **kwargs)
     return wrapper
+from .models import TenantUser, CustomerAddress
+from .serializers import (
+    TenantUserRegistrationSerializer, TenantUserSerializer, StorefrontStoreSerializer,
+    StorefrontProductListSerializer, TenantUserProfileSerializer, CustomerAddressSerializer,
+    StorefrontChangePasswordSerializer
+)
+from .authentication import TenantJWTAuthentication, TenantRefreshToken
+
+class StorefrontRegisterView(generics.CreateAPIView):
+    """
+    POST /api/storefront/auth/register/ — Register a new storefront customer
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    serializer_class = TenantUserRegistrationSerializer
+
+    @require_tenant
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        # Generate JWT tokens
+        refresh = TenantRefreshToken.for_user(user)
+        access = refresh.access_token
+
+        return Response({
+            'user': TenantUserSerializer(user).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(access),
+            },
+            'message': 'Account created successfully'
+        }, status=status.HTTP_201_CREATED)
+
+
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@require_tenant
+def storefront_login_view(request):
+    """POST /api/storefront/auth/login/ — Login storefront customer"""
+    email = request.data.get('email')
+    password = request.data.get('password')
+    
+    if not email or not password:
+        return Response({'error': 'Please provide both email and password'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = TenantUser.objects.get(email=email)
+        if not user.check_password(password):
+            raise TenantUser.DoesNotExist
+    except TenantUser.DoesNotExist:
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+    if not user.is_active:
+        return Response({'error': 'Account is inactive'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    refresh = TenantRefreshToken.for_user(user)
+    access = refresh.access_token
+
+    return Response({
+        'user': TenantUserSerializer(user).data,
+        'tokens': {
+            'refresh': str(refresh),
+            'access': str(access),
+        },
+        'message': 'Login successful'
+    })
+
 
 
 class StorefrontStoreInfoView(APIView):
@@ -264,6 +335,7 @@ class StorefrontOrderCreateView(APIView):
 class StorefrontCustomerOrdersView(APIView):
     """GET /api/storefront/customer/orders/ — list orders for logged-in customer."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def get(self, request):
@@ -280,6 +352,7 @@ class StorefrontCustomerOrdersView(APIView):
 class StorefrontCustomerOrderDetailView(APIView):
     """GET /api/storefront/customer/orders/<id>/ — order detail for logged-in customer."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def get(self, request, order_id):
@@ -296,6 +369,7 @@ class StorefrontCustomerOrderDetailView(APIView):
 class StorefrontCustomerOrderCancelView(APIView):
     """POST /api/storefront/customer/orders/<id>/cancel/ — cancel an order."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def post(self, request, order_id):
@@ -318,6 +392,7 @@ class StorefrontCustomerOrderCancelView(APIView):
 class StorefrontCustomerOrderReturnView(APIView):
     """POST /api/storefront/customer/orders/<id>/return/ — request a return."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def post(self, request, order_id):
@@ -340,6 +415,7 @@ class StorefrontCustomerOrderReturnView(APIView):
 class StorefrontCustomerOrderItemCancelView(APIView):
     """POST /api/storefront/customer/items/<item_id>/cancel/ — cancel an individual item."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def post(self, request, item_id):
@@ -365,9 +441,63 @@ class StorefrontCustomerOrderItemCancelView(APIView):
         return Response({'error': 'Item cannot be cancelled at this stage.'}, status=400)
 
 
+class StorefrontCustomerProfileView(APIView):
+    """GET/PATCH /api/storefront/customer/profile/ — retrieve or update customer profile."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
+
+    @require_tenant
+    def get(self, request):
+        serializer = TenantUserSerializer(request.user)
+        return Response(serializer.data)
+
+    @require_tenant
+    def patch(self, request):
+        serializer = TenantUserProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        # Return full updated user object
+        return Response(TenantUserSerializer(request.user).data)
+
+
+class StorefrontCustomerAddressViewSet(viewsets.ModelViewSet):
+    """CRUD operations for Storefront Customer Addresses"""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
+    serializer_class = CustomerAddressSerializer
+
+    def get_queryset(self):
+        # We assume @require_tenant behavior since authentication depends on it.
+        # Ensure only the authenticated user's addresses are returned.
+        return CustomerAddress.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class StorefrontCustomerPasswordView(APIView):
+    """POST /api/storefront/customer/password/ — change customer password."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
+
+    @require_tenant
+    def post(self, request):
+        serializer = StorefrontChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user = request.user
+        if not user.check_password(serializer.validated_data['current_password']):
+            return Response({'error': 'Incorrect current password.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        return Response({'message': 'Password changed successfully.'})
+
+
 class StorefrontCustomerOrderItemReturnView(APIView):
     """POST /api/storefront/customer/items/<item_id>/return/ — return an individual item."""
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TenantJWTAuthentication]
 
     @require_tenant
     def post(self, request, item_id):

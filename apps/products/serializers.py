@@ -169,6 +169,23 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             }
         }
 
+class CatalogVariantSerializer(ProductVariantSerializer):
+    """Variant serializer specifically tailored for the catalogs listing page"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    product_id = serializers.UUIDField(source='product.id', read_only=True)
+    product_price = serializers.DecimalField(source='product.price', max_digits=12, decimal_places=2, read_only=True)
+    variant_name = serializers.SerializerMethodField()
+
+    class Meta(ProductVariantSerializer.Meta):
+        fields = ProductVariantSerializer.Meta.fields + ['product_name', 'product_id', 'product_price', 'variant_name']
+
+    def get_variant_name(self, obj):
+        values = [vav.attribute_value.value for vav in obj.attribute_values.all()]
+        values_label = '-'.join(values)
+        if values_label:
+            return f"{obj.product.name} - {values_label}"
+        return obj.sku
+
 
 class ProductAttributeSerializer(serializers.ModelSerializer):
     """Selected Attributes for Product"""

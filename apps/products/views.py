@@ -19,7 +19,7 @@ from .serializers import (
     CategorySerializer, CategoryTreeSerializer,
     ProductSerializer, ProductCreateSerializer, ProductMediaSerializer,
     GenerateCatalogRequestSerializer, ProductVariantSerializer,
-    StorefrontProductSerializer
+    StorefrontProductSerializer, CatalogVariantSerializer
 )
 from apps.attributes.models import Attribute, AttributeValue
 from apps.tenants.utils import get_tenant_model
@@ -37,6 +37,8 @@ from apps.tenants.permissions import IsStoreOwner
 class CategoryViewSet(viewsets.ModelViewSet):
     """Category Management with Nested Support"""
     permission_classes = [IsAuthenticated, IsStoreOwner]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'slug']
 
     def get_serializer_class(self):
         if self.action == 'tree':
@@ -44,7 +46,15 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return CategorySerializer
 
     def get_queryset(self):
-        return get_tenant_model(self.request, Category)
+        qs = get_tenant_model(self.request, Category)
+        
+        level = self.request.query_params.get('level')
+        if level == 'main':
+            qs = qs.filter(parent__isnull=True)
+        elif level == 'sub':
+            qs = qs.filter(parent__isnull=False)
+            
+        return qs
 
     def perform_create(self, serializer):
         serializer.save()
@@ -171,11 +181,18 @@ class ProductViewSet(viewsets.ModelViewSet):
             qs = qs.filter(stock__gt=0)
         elif stock_status == 'out_of_stock':
             qs = qs.filter(stock=0)
+        elif stock_status == 'low_stock':
+            qs = qs.filter(stock__lte=15)
 
         # Filter by active status
         is_active = params.get('is_active')
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
+
+        # Filter by featured status
+        is_featured = params.get('is_featured')
+        if is_featured is not None:
+            qs = qs.filter(is_featured=is_featured.lower() in ('true', '1'))
 
         return qs
 
@@ -807,3 +824,29 @@ class ProductViewSet(viewsets.ModelViewSet):
             'reserved': product.reserved,
             'should_be_on_shelf': product.stock + product.reserved,
         })
+
+@extend_schema(tags=['Variants'])
+@extend_schema_view(
+    list=extend_schema(summary="List all product variants"),
+    retrieve=extend_schema(summary="Get variant details"),
+)
+class VariantViewSet(viewsets.ReadOnlyModelViewSet):
+    """Direct Variant Management for Catalogs Page"""
+    permission_classes = [IsAuthenticated, IsStoreOwner]
+    serializer_class = CatalogVariantSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['sku', 'product__name']
+
+    def get_queryset(self):
+        tenant_products = get_tenant_model(self.request, Product)
+        qs = ProductVariant.objects.filter(
+            product__in=tenant_products.filter(product_type=ProductType.CATALOG)
+        ).select_related('product').prefetch_related('attribute_values__attribute_value__attribute')
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                models.Q(sku__icontains=search) | models.Q(product__name__icontains=search)
+            )
+
+        return qs

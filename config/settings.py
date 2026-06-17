@@ -34,9 +34,8 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 # Application definition
 
 SHARED_APPS = (
-    'django_tenants',  # mandatory
-    'apps.tenants', # you must list the app where your tenant model resides in
-
+    'django_tenants',
+    'apps.tenants',
     'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -55,15 +54,12 @@ SHARED_APPS = (
     'drf_spectacular',
     'channels',
     
-    # Accounts (contains User model for public schema)
     'apps.accounts',
 )
 
 TENANT_APPS = (
-    # The following Django contrib apps must be in TENANT_APPS
     'django.contrib.contenttypes',
 
-    # your tenant-specific apps
     'apps.products',
     'apps.attributes',
     'apps.orders',
@@ -73,8 +69,8 @@ TENANT_APPS = (
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
-TENANT_MODEL = "tenants.Store" # app.Model
-TENANT_DOMAIN_MODEL = "tenants.Domain" # app.Model
+TENANT_MODEL = "tenants.Store"
+TENANT_DOMAIN_MODEL = "tenants.Domain"
 
 
 MIDDLEWARE = [
@@ -205,10 +201,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
-    'PAGE_SIZE_QUERY_PARAM': 'page_size',
-    'MAX_PAGE_SIZE': 100,
+    'DEFAULT_PAGINATION_CLASS': 'config.pagination.CustomPageNumberPagination',
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }

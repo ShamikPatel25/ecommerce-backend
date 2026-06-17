@@ -24,6 +24,11 @@ class TenantUser(models.Model):
         verbose_name_plural = 'Tenant Users'
         ordering = ['-date_joined']
 
+    @property
+    def is_authenticated(self):
+        """Always return True. This is a way to tell if the user has been authenticated in templates/DRF permissions."""
+        return True
+
     def __str__(self):
         return self.email
 

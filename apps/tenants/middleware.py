@@ -20,6 +20,24 @@ class TenantHeaderMiddleware:
         TenantModel = get_tenant_model()
         public_schema_name = get_public_schema_name()
 
+        # Check if path is exempt from tenant routing (force public schema)
+        is_exempt = any(request.path.startswith(path) for path in TENANT_EXEMPT_PATHS)
+        if is_exempt:
+            try:
+                tenant = TenantModel.objects.get(schema_name=public_schema_name)
+            except TenantModel.DoesNotExist:
+                tenant = TenantModel(schema_name=public_schema_name)
+            
+            request.tenant = tenant
+            connection.set_tenant(request.tenant)
+            
+            if hasattr(settings, 'PUBLIC_SCHEMA_URLCONF'):
+                request.urlconf = settings.PUBLIC_SCHEMA_URLCONF
+            elif hasattr(settings, 'ROOT_URLCONF'):
+                request.urlconf = settings.ROOT_URLCONF
+                
+            return self.get_response(request)
+
         # Try to get tenant from headers
         tenant_identifier = request.META.get('HTTP_X_STORE_ID') or request.META.get('HTTP_X_TENANT')
         tenant = None

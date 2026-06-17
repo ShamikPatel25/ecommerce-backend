@@ -24,10 +24,7 @@ class Category(models.Model):
         related_name='children'
     )
 
-    # Level tracking (auto-calculated)
     level = models.PositiveIntegerField(default=0, editable=False)
-
-    # Status
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
