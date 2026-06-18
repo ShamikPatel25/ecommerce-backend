@@ -97,7 +97,8 @@ class StoreViewSet(viewsets.ModelViewSet):
     
     @extend_schema(
         summary="Toggle store active status",
-        description="Enable or disable a store"
+        description="Enable or disable a store. Pass 'is_active' to explicitly set status, or omit to blindly toggle.",
+        request={'application/json': {'type': 'object', 'properties': {'is_active': {'type': 'boolean'}}}},
     )
     @action(detail=True, methods=['post'])
     def toggle_active(self, request, pk=None):
@@ -105,7 +106,17 @@ class StoreViewSet(viewsets.ModelViewSet):
         from django_tenants.utils import schema_context
         
         store = self.get_object()
-        store.is_active = not store.is_active
+        
+        if 'is_active' in request.data:
+            # Check if it's a string 'true'/'false' or boolean
+            val = request.data['is_active']
+            if isinstance(val, str):
+                store.is_active = val.lower() in ['true', '1', 't', 'yes']
+            else:
+                store.is_active = bool(val)
+        else:
+            store.is_active = not store.is_active
+            
         with schema_context('public'):
             store.save()
         

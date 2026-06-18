@@ -42,7 +42,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     """Order management — list, retrieve, create, update status, delete."""
     permission_classes = [IsAuthenticated, IsStoreOwner]
     filter_backends = [filters.SearchFilter]
-    search_fields = ['id', 'customer_name', 'customer_email', 'status']
+    search_fields = ['order_number', 'customer_name', 'customer_email', 'status']
     http_method_names  = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_serializer_class(self):

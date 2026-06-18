@@ -2,12 +2,7 @@ from rest_framework.permissions import BasePermission
 
 
 class IsStoreOwner(BasePermission):
-    """
-    Verify the authenticated user owns the tenant store attached to the request.
 
-    Prevents cross-tenant access: user A cannot set X-Tenant to store B's subdomain
-    and access store B's admin data.
-    """
     message = 'You do not have permission to access this store.'
 
     def has_permission(self, request, view):
@@ -20,10 +15,7 @@ class IsStoreOwner(BasePermission):
 
 
 class IsStoreOwnerRole(BasePermission):
-    """
-    Check if the user has the 'is_store_owner' role.
-    Superusers automatically bypass this check.
-    """
+
     message = "You must be a registered store owner to perform this action."
 
     def has_permission(self, request, view):
@@ -37,10 +29,7 @@ class IsStoreOwnerRole(BasePermission):
 
 
 class IsOwnerOfStoreObject(BasePermission):
-    """
-    Check if the specific store object belongs to the requesting user.
-    Superusers automatically bypass this check.
-    """
+
     message = "You do not own this store."
 
     def has_object_permission(self, request, view, obj):

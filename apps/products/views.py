@@ -54,7 +54,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         elif level == 'sub':
             qs = qs.filter(parent__isnull=False)
             
-        return qs
+        return qs.order_by('full_slug')
 
     def perform_create(self, serializer):
         serializer.save()
@@ -130,7 +130,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Delete product")
 )
 class ProductViewSet(viewsets.ModelViewSet):
-    """Complete Product Management with Catalog Generation"""
     permission_classes = [IsAuthenticated, IsStoreOwner]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'sku', 'description']
@@ -144,24 +143,20 @@ class ProductViewSet(viewsets.ModelViewSet):
         qs = get_tenant_model(self.request, Product).prefetch_related('media', 'variants')
         params = self.request.query_params
 
-        # Search by name or SKU
         search = params.get('search', '').strip()
         if search:
             qs = qs.filter(
                 models.Q(name__icontains=search) | models.Q(sku__icontains=search)
             )
 
-        # Filter by category
         category = params.get('category')
         if category:
             qs = qs.filter(category_id=category)
 
-        # Filter by product type
         product_type = params.get('product_type')
         if product_type in (ProductType.SINGLE, ProductType.CATALOG):
             qs = qs.filter(product_type=product_type)
 
-        # Filter by price range
         min_price = params.get('min_price')
         if min_price:
             try:
@@ -175,7 +170,6 @@ class ProductViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
 
-        # Filter by stock status
         stock_status = params.get('stock_status')
         if stock_status == 'in_stock':
             qs = qs.filter(stock__gt=0)
@@ -184,12 +178,10 @@ class ProductViewSet(viewsets.ModelViewSet):
         elif stock_status == 'low_stock':
             qs = qs.filter(stock__lte=15)
 
-        # Filter by active status
         is_active = params.get('is_active')
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() in ('true', '1'))
 
-        # Filter by featured status
         is_featured = params.get('is_featured')
         if is_featured is not None:
             qs = qs.filter(is_featured=is_featured.lower() in ('true', '1'))

@@ -34,7 +34,7 @@ from .models import TenantUser, CustomerAddress
 from .serializers import (
     TenantUserRegistrationSerializer, TenantUserSerializer, StorefrontStoreSerializer,
     StorefrontProductListSerializer, TenantUserProfileSerializer, CustomerAddressSerializer,
-    StorefrontChangePasswordSerializer
+    StorefrontChangePasswordSerializer, StorefrontLoginSerializer
 )
 from .authentication import TenantJWTAuthentication, TenantRefreshToken
 
@@ -67,7 +67,9 @@ class StorefrontRegisterView(generics.CreateAPIView):
 
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(request=StorefrontLoginSerializer, responses={200: TenantUserSerializer})
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -79,6 +81,9 @@ def storefront_login_view(request):
     
     if not email or not password:
         return Response({'error': 'Please provide both email and password'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    if email != email.lower():
+        return Response({'email': ['Email must be lowercase only.']}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         user = TenantUser.objects.get(email=email)

@@ -126,6 +126,11 @@ def login_view(request):
         return Response({
             'error': 'Please provide both email and password'
         }, status=status.HTTP_400_BAD_REQUEST)
+        
+    if email != email.lower():
+        return Response({
+            'email': ['Email must be lowercase only.']
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     # Authenticate user
     user = authenticate(request, username=email, password=password)

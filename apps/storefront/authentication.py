@@ -1,12 +1,10 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
+from django.utils.translation import gettext_lazy as _
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
+from rest_framework_simplejwt.tokens import RefreshToken
 
 class OptionalJWTAuthentication(JWTAuthentication):
-    """JWT authentication that returns None instead of raising on invalid/expired tokens.
-
-    Use this on views that accept both authenticated and anonymous requests
-    (e.g. guest checkout) so an expired Authorization header doesn't block access.
-    """
 
     def authenticate(self, request):
         try:
@@ -15,16 +13,8 @@ class OptionalJWTAuthentication(JWTAuthentication):
             return None
 
 
-from django.utils.translation import gettext_lazy as _
-from rest_framework_simplejwt.settings import api_settings
-from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
 
 class TenantJWTAuthentication(JWTAuthentication):
-    """JWT authentication for Storefront Customers (TenantUser).
-    
-    This class overrides get_user to fetch the user from the TenantUser table
-    instead of the global accounts_user table.
-    """
 
     def get_user(self, validated_token):
         try:
@@ -44,13 +34,9 @@ class TenantJWTAuthentication(JWTAuthentication):
         return user
 
 
-from rest_framework_simplejwt.tokens import RefreshToken
 
 class TenantRefreshToken(RefreshToken):
-    """
-    A custom RefreshToken that skips saving the token to the global OutstandingToken table.
-    This prevents Foreign Key constraint errors because TenantUser is not the global User model.
-    """
+
     @classmethod
     def for_user(cls, user):
         user_id = getattr(user, api_settings.USER_ID_FIELD)

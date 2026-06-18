@@ -47,10 +47,11 @@ class CategorySerializer(serializers.ModelSerializer):
     """Simple Category Serializer"""
     full_path = serializers.CharField(read_only=True)
     product_count = serializers.SerializerMethodField()
+    parent_name = serializers.CharField(source='parent.name', read_only=True)
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'full_slug', 'parent', 'level', 'full_path', 'is_active', 'product_count', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'slug', 'full_slug', 'parent', 'parent_name', 'level', 'full_path', 'is_active', 'product_count', 'created_at', 'updated_at']
         read_only_fields = ['id', 'level', 'full_slug', 'created_at', 'updated_at']
 
     def get_product_count(self, obj):
@@ -96,7 +97,6 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductMediaSerializer(serializers.ModelSerializer):
-    """Product Media Serializer"""
     file_url = serializers.SerializerMethodField()
     attribute_value_id = serializers.UUIDField(source='attribute_value.id', read_only=True, default=None)
     attribute_value_name = serializers.CharField(source='attribute_value.value', read_only=True, default=None)
@@ -114,16 +114,12 @@ class ProductMediaSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def get_file_url(self, obj):
-        # Return a relative path (e.g. /media/products/2026/03/image.jpg).
-        # The Next.js rewrite rule proxies /media/** → backend:8000/media/**,
-        # so this works correctly in both Docker and local development.
         if obj.file and hasattr(obj.file, 'url'):
             return obj.file.url
         return None
 
 
 class VariantAttributeValueSerializer(serializers.ModelSerializer):
-    """Variant Attribute Value Serializer"""
     attribute_name = serializers.CharField(source='attribute_value.attribute.name', read_only=True)
     value = serializers.CharField(source='attribute_value.value', read_only=True)
     value_id = serializers.UUIDField(source='attribute_value.id', read_only=True)
@@ -135,7 +131,6 @@ class VariantAttributeValueSerializer(serializers.ModelSerializer):
 
 
 class ProductVariantSerializer(serializers.ModelSerializer):
-    """Product Variant Serializer"""
     attribute_values = VariantAttributeValueSerializer(many=True, read_only=True)
     final_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     attribute_values_display = serializers.CharField(read_only=True)
@@ -170,7 +165,6 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         }
 
 class CatalogVariantSerializer(ProductVariantSerializer):
-    """Variant serializer specifically tailored for the catalogs listing page"""
     product_name = serializers.CharField(source='product.name', read_only=True)
     product_id = serializers.UUIDField(source='product.id', read_only=True)
     product_price = serializers.DecimalField(source='product.price', max_digits=12, decimal_places=2, read_only=True)
@@ -188,7 +182,6 @@ class CatalogVariantSerializer(ProductVariantSerializer):
 
 
 class ProductAttributeSerializer(serializers.ModelSerializer):
-    """Selected Attributes for Product"""
     attribute_name = serializers.CharField(source='attribute.name', read_only=True)
     attribute_values = serializers.SerializerMethodField()
     
@@ -197,14 +190,12 @@ class ProductAttributeSerializer(serializers.ModelSerializer):
         fields = ['id', 'attribute', 'attribute_name', 'attribute_values']
     
     def get_attribute_values(self, obj):
-        """Get all values for this attribute"""
         from apps.attributes.serializers import AttributeValueSerializer
         values = obj.attribute.values.all()
         return AttributeValueSerializer(values, many=True).data
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    """Complete Product Serializer"""
     category_name = serializers.CharField(source='category.full_path', read_only=True)
     media = ProductMediaSerializer(many=True, read_only=True)
     selected_attributes = ProductAttributeSerializer(many=True, read_only=True)
