@@ -69,7 +69,7 @@ class AttributeValue(models.Model):
     
     class Meta:
         ordering = ['attribute', 'value']
-        unique_together = ['attribute', 'value']  # No duplicate values per attribute
+        unique_together = ['attribute', 'value']
         verbose_name = 'Attribute Value'
         verbose_name_plural = 'Attribute Values'
     

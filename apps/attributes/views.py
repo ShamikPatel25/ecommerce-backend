@@ -59,7 +59,7 @@ class AttributeViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Return only attributes for current tenant"""
-        return get_tenant_model(self.request, Attribute).prefetch_related('values')
+        return get_tenant_model(self.request, Attribute).prefetch_related('values').order_by('-created_at')
     
     def get_serializer_class(self):
         """Use different serializer for creation"""

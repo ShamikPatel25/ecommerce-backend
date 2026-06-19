@@ -46,7 +46,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         # Local part: at least 2 chars
         if len(local_part) < 2:
             raise serializers.ValidationError("Minimum 2 characters required before @.")
-        if not re.match(r'^[a-z0-9][a-z0-9._-]*[a-z0-9]$', local_part) and not re.match(r'^[a-z0-9]{2}$', local_part):
+        if not re.match(r'^[a-z0-9][a-z0-9._-]*[a-z0-9]$', local_part):
             raise serializers.ValidationError("Invalid characters in email.")
 
         # Domain must be gmail.com only
@@ -76,7 +76,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
-        """Create user with hashed password"""
         validated_data.pop('password2')
 
         user = User.objects.create_user(

@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction, models
+from django.db.models.functions import Coalesce
 from itertools import product as itertools_product
 import logging
 import os
@@ -54,7 +55,10 @@ class CategoryViewSet(viewsets.ModelViewSet):
         elif level == 'sub':
             qs = qs.filter(parent__isnull=False)
             
-        return qs.order_by('full_slug')
+        qs = qs.annotate(
+            group_created_at=Coalesce('parent__created_at', 'created_at')
+        ).order_by('-group_created_at', 'level', '-created_at')
+        return qs
 
     def perform_create(self, serializer):
         serializer.save()
@@ -186,7 +190,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         if is_featured is not None:
             qs = qs.filter(is_featured=is_featured.lower() in ('true', '1'))
 
-        return qs
+        return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save()
@@ -569,6 +573,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                         combo['attribute_values'],
                         price=combo.get('price'),
                         stock=combo.get('stock', 0),
+                        sku=combo.get('sku')
                     )
                     if created:
                         created_variants.append(variant)
@@ -609,6 +614,14 @@ class ProductViewSet(viewsets.ModelViewSet):
 
         stock = request.data.get('stock')
         price = request.data.get('price')
+        sku = request.data.get('sku')
+
+        if sku is not None:
+            sku_val = str(sku).strip().upper()
+            if sku_val:
+                if Product.objects.filter(sku=sku_val).exists() or ProductVariant.objects.filter(sku=sku_val).exclude(id=variant.id).exists():
+                    return Response({'error': f'SKU "{sku_val}" already exists'}, status=status.HTTP_400_BAD_REQUEST)
+                variant.sku = sku_val
 
         if stock is not None:
             try:
@@ -671,7 +684,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         return formatted_combinations
     
-    def _create_variant(self, product, attribute_value_ids, price=None, stock=0):
+    def _create_variant(self, product, attribute_value_ids, price=None, stock=0, sku=None):
         """Create a single variant. Returns (variant, created) — skips if duplicate SKU exists."""
         # Validate attribute values
         attr_values = AttributeValue.objects.filter(
@@ -682,15 +695,33 @@ class ProductViewSet(viewsets.ModelViewSet):
             raise ValueError('Some attribute values not found')
 
         # Generate deterministic SKU from product SKU + attribute values
-        sku_parts = [product.sku]
-        for av in attr_values:
-            sku_parts.append(av.value.replace(' ', '-'))
-        variant_sku = '-'.join(sku_parts)
+        if sku and str(sku).strip():
+            variant_sku = str(sku).strip().upper()
+            if Product.objects.filter(sku=variant_sku).exists() or ProductVariant.objects.filter(sku=variant_sku).exists():
+                raise ValueError(f'SKU "{variant_sku}" already exists')
+        else:
+            sku_parts = [product.sku]
+            for av in attr_values:
+                sku_parts.append(av.value.replace(' ', '-'))
+            variant_sku = '-'.join(sku_parts)
+            
+            # Ensure auto-generated SKU uniqueness
+            base_variant_sku = variant_sku
+            counter = 1
+            while Product.objects.filter(sku=variant_sku).exists() or ProductVariant.objects.filter(sku=variant_sku).exists():
+                variant_sku = f"{base_variant_sku}-{counter}"
+                counter += 1
 
-        # Skip if this exact variant already exists
-        existing = ProductVariant.objects.filter(product=product, sku=variant_sku).first()
-        if existing:
-            return existing, False  # (variant, created=False)
+        # Check if this exact attribute combination already exists
+        existing = product.variants.annotate(
+            attr_count=models.Count('attribute_values')
+        ).filter(attr_count=len(attribute_value_ids))
+        for av in attr_values:
+            existing = existing.filter(attribute_values__attribute_value=av)
+            
+        existing_variant = existing.first()
+        if existing_variant:
+            return existing_variant, False
 
         # Create the new variant
         variant = ProductVariant.objects.create(

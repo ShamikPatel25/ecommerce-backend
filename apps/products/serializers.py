@@ -328,6 +328,10 @@ class CombinationSerializer(serializers.Serializer):
             'max_whole_digits': 'Please enter a valid price (maximum 8 digits allowed).'
         }
     )
+    sku = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, allow_null=True,
+        help_text='Override SKU for this variant (optional)'
+    )
     stock = serializers.IntegerField(
         default=0, required=False,
         help_text='Stock quantity for this variant',

@@ -48,7 +48,7 @@ class Order(models.Model):
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_amount    = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes           = models.TextField(blank=True, default='')
-
+    
     # Shipping address
     address_line_1  = models.CharField(max_length=255, blank=True, default='')
     address_line_2  = models.CharField(max_length=255, blank=True, default='')
